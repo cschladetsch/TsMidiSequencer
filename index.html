@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AKAI Step Sequencer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      background: #1a1a1a; 
+      color: #fff; 
+      font-family: monospace; 
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    canvas { border: 2px solid #333; cursor: pointer; }
+    #controls { 
+      display: flex; 
+      gap: 15px; 
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    button {
+      background: #333;
+      color: #fff;
+      border: 1px solid #555;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      min-width: 100px;
+    }
+    button:hover { background: #444; }
+    button.active { background: #0a0; }
+    button.playing { background: #00f; animation: pulse 0.5s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    input[type="range"] {
+      width: 150px;
+    }
+    label {
+      font-size: 12px;
+      color: #999;
+    }
+  </style>
+</head>
+<body>
+  <h2>AKAI Step Sequencer</h2>
+  <div id="controls">
+    <button id="audioBtn">Enable Audio</button>
+    <button id="playBtn">Play</button>
+    <button id="clearBtn">Clear Grid</button>
+    <div class="slider-group">
+      <label>BPM: <span id="bpmValue">120</span></label>
+      <input type="range" id="bpmSlider" min="60" max="200" value="120">
+    </div>
+  </div>
+  <canvas id="grid" width="480" height="480"></canvas>
+  <p style="color: #666; font-size: 12px; margin-top: 10px;">
+    Click buttons to create pattern • 8 steps (columns) × 8 notes (rows) • Each row = different pitch
+  </p>
+  
+  <script type="module">
+    // State
+    const canvas = document.getElementById('grid');
+    const ctx = canvas.getContext('2d');
+    const buttons = Array(64).fill().map((_, i) => ({ 
+      active: false, 
+      color: '#2a2a2a',
+      note: 60 + (7 - Math.floor(i / 8)) * 2  // Higher rows = higher notes
+    }));
+    
+    let isPlaying = false;
+    let currentStep = 0;
+    let bpm = 120;
+    let intervalId = null;
+    
+    // Web Audio
+    let audioCtx = null;
+    
+    document.getElementById('audioBtn').onclick = () => {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        document.getElementById('audioBtn').textContent = 'Audio Enabled';
+        document.getElementById('audioBtn').classList.add('active');
+      }
+    };
+    
+    function playNote(note) {
+      if (!audioCtx) return;
+      
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      
+      // MIDI note to frequency
+      const freq = 440 * Math.pow(2, (note - 69) / 12);
+      osc.frequency.value = freq;
+      osc.type = 'square';
+      
+      // Shorter envelope for sequencer
+      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+      
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.15);
+    }
+    
+    // Render grid
+    function render() {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, 480, 480);
+      
+      for (let i = 0; i < 64; i++) {
+        const col = i % 8;
+        const row = Math.floor(i / 8);
+        const x = col * 60;
+        const y = row * 60;
+        
+        // Highlight current step column
+        const isCurrentStep = isPlaying && col === currentStep;
+        
+        if (isCurrentStep) {
+          ctx.fillStyle = '#222';
+          ctx.fillRect(x, y, 58, 58);
+        }
+        
+        ctx.fillStyle = buttons[i].color;
+        ctx.fillRect(x + 4, y + 4, 50, 50);
+        
+        ctx.strokeStyle = buttons[i].active ? '#fff' : (isCurrentStep ? '#555' : '#333');
+        ctx.lineWidth = buttons[i].active ? 2 : 1;
+        ctx.strokeRect(x + 4, y + 4, 50, 50);
+      }
+    }
+    
+    // Sequencer step
+    function step() {
+      // Play all active buttons in current column
+      for (let row = 0; row < 8; row++) {
+        const i = row * 8 + currentStep;
+        if (buttons[i].active) {
+          playNote(buttons[i].note);
+        }
+      }
+      
+      currentStep = (currentStep + 1) % 8;
+      render();
+    }
+    
+    // Play/Stop
+    document.getElementById('playBtn').onclick = () => {
+      isPlaying = !isPlaying;
+      const btn = document.getElementById('playBtn');
+      
+      if (isPlaying) {
+        btn.textContent = 'Stop';
+        btn.classList.add('playing');
+        currentStep = 0;
+        const interval = (60 / bpm) * 1000 / 2;  // 16th notes
+        intervalId = setInterval(step, interval);
+      } else {
+        btn.textContent = 'Play';
+        btn.classList.remove('playing');
+        clearInterval(intervalId);
+        currentStep = 0;
+        render();
+      }
+    };
+    
+    // BPM control
+    document.getElementById('bpmSlider').oninput = (e) => {
+      bpm = parseInt(e.target.value);
+      document.getElementById('bpmValue').textContent = bpm;
+      
+      // Update interval if playing
+      if (isPlaying) {
+        clearInterval(intervalId);
+        const interval = (60 / bpm) * 1000 / 2;
+        intervalId = setInterval(step, interval);
+      }
+    };
+    
+    // Click handler
+    canvas.onclick = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const i = Math.floor(y / 60) * 8 + Math.floor(x / 60);
+      
+      if (i >= 0 && i < 64) {
+        buttons[i].active = !buttons[i].active;
+        buttons[i].color = buttons[i].active ? '#0f0' : '#2a2a2a';
+        
+        // Preview note when clicking
+        if (buttons[i].active && !isPlaying) {
+          playNote(buttons[i].note);
+        }
+        
+        render();
+      }
+    };
+    
+    // Clear button
+    document.getElementById('clearBtn').onclick = () => {
+      buttons.forEach(btn => {
+        btn.active = false;
+        btn.color = '#2a2a2a';
+      });
+      render();
+    };
+    
+    // Initial render
+    render();
+  </script>
+</body>
+</html>
