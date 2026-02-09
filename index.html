@@ -15,6 +15,12 @@
       gap: 15px;
     }
     canvas { border: 2px solid #333; cursor: pointer; }
+    #fractalBg { 
+      position: absolute; 
+      opacity: 0.3; 
+      pointer-events: none;
+      filter: blur(1px);
+    }
     #controls { 
       display: flex; 
       gap: 15px; 
@@ -80,17 +86,21 @@
       color: #0f0;
       border: 1px solid #0f0;
     }
+    .canvas-container {
+      position: relative;
+      display: inline-block;
+    }
   </style>
 </head>
 <body>
   <h2>⬢ PRIME HARMONIC FRACTAL SEQUENCER ⬢</h2>
   
   <div id="controls">
-    <button id="audioBtn">ENABLE AUDIO</button>
     <button id="playBtn">PLAY</button>
     <button id="clearBtn">CLEAR</button>
     <button id="randomBtn">RANDOM</button>
     <button id="euclidBtn">EUCLIDEAN</button>
+    <button id="fractalBtn">REGENERATE FRACTAL</button>
     
     <div class="slider-group">
       <label>BPM: <span id="bpmValue">120</span></label>
@@ -101,17 +111,25 @@
       <label>Prime: <span id="primeValue">3</span></label>
       <input type="range" id="primeSlider" min="0" max="7" value="1" step="1">
     </div>
+    
+    <div class="slider-group">
+      <label>Fractal Depth: <span id="depthValue">5</span></label>
+      <input type="range" id="depthSlider" min="3" max="8" value="5" step="1">
+    </div>
   </div>
   
   <div class="mode-info" id="modeInfo">
     HARMONIC MODE: Perfect Fifth (3:2 ratio)
   </div>
   
-  <canvas id="grid" width="480" height="480"></canvas>
+  <div class="canvas-container">
+    <canvas id="fractalBg" width="480" height="480"></canvas>
+    <canvas id="grid" width="480" height="480"></canvas>
+  </div>
   
   <div class="info">
     Click to toggle notes • Colors = prime harmonics • Rows = overtone series • Columns = time steps<br>
-    Euclidean mode generates fractal rhythms using prime number divisions
+    Euclidean mode generates fractal rhythms • Background = Sierpinski triangle from current prime
   </div>
   
   <script type="module">
@@ -131,11 +149,28 @@
     // State
     const canvas = document.getElementById('grid');
     const ctx = canvas.getContext('2d');
+    const fractalCanvas = document.getElementById('fractalBg');
+    const fractalCtx = fractalCanvas.getContext('2d');
+    
     let currentPrime = 3;
+    let fractalDepth = 5;
     let buttons = initButtons();
+    let audioCtx = null;
+    let fractalSeed = Math.random();
+    let rowPhase = Array(8).fill(0);
+    let rowLength = Array(8).fill(8);
+    let stepCount = 0;
+    
+    // Initialize audio immediately
+    window.addEventListener('click', () => {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('Audio context created');
+      }
+    }, { once: true });
     
     function initButtons() {
-      return Array(64).fill().map((_, i) => {
+      const btns = Array(64).fill().map((_, i) => {
         const row = Math.floor(i / 8);
         const col = i % 8;
         return {
@@ -145,20 +180,76 @@
           row, col
         };
       });
+      
+      // Set default pattern (simple beat)
+      btns[0].active = true;   // Kick
+      btns[16].active = true;  // Snare
+      btns[32].active = true;  // Hi-hat
+      btns[40].active = true;  // Hi-hat
+      
+      return btns;
     }
     
     // Color based on prime factorization
     function getPrimeColor(row) {
       const hue = (row * 137.508) % 360; // Golden angle
-      return `hsl(${hue}, 70%, 30%)`;
+      return `hsl(${hue}, 70%, 40%)`;
     }
     
-    // Calculate note using just intonation based on prime ratios
+    // Calculate note using simpler frequency mapping
     function getHarmonicNote(row, prime) {
-      const baseNote = 48; // C3
-      const ratio = prime / 2; // Just intonation ratio
-      const octave = Math.floor(row / prime);
-      return baseNote + (row % prime) * (Math.log2(ratio) * 12) + (octave * 12);
+      // Use pentatonic scale (always sounds good)
+      const pentatonic = [0, 2, 4, 7, 9]; // Major pentatonic intervals
+      const baseNote = 36; // C2 - low bass
+      const octave = Math.floor(row / 5) * 12;
+      const scale = pentatonic[row % 5];
+      return baseNote + octave + scale + (prime - 3) * 2;
+    }
+    
+    // Sierpinski triangle fractal
+    function drawSierpinski(x, y, size, depth, prime) {
+      if (depth === 0) {
+        const offset = Math.sin(fractalSeed * 1000 + x + y) * 20;
+        const hue = ((prime * 40) + offset) % 360;
+        fractalCtx.fillStyle = `hsla(${hue}, 70%, 50%, ${0.1 + Math.abs(Math.sin(fractalSeed * depth)) * 0.1})`;
+        fractalCtx.beginPath();
+        fractalCtx.moveTo(x, y);
+        fractalCtx.lineTo(x + size, y);
+        fractalCtx.lineTo(x + size/2, y - size * 0.866);
+        fractalCtx.closePath();
+        fractalCtx.fill();
+        return;
+      }
+      
+      const halfSize = size / 2;
+      const height = size * 0.866 / 2;
+      const jitter = Math.sin(fractalSeed * depth * 100) * 5;
+      
+      drawSierpinski(x + jitter, y, halfSize, depth - 1, prime);
+      drawSierpinski(x + halfSize - jitter, y, halfSize, depth - 1, prime);
+      drawSierpinski(x + halfSize/2, y - height + jitter, halfSize, depth - 1, prime);
+      
+      if (prime >= 5 && depth > 2) {
+        drawSierpinski(x + halfSize/4, y - height/2, halfSize/2, depth - 2, prime);
+      }
+    }
+    
+    // Draw fractal background
+    function drawFractal() {
+      fractalCtx.fillStyle = '#000';
+      fractalCtx.fillRect(0, 0, 480, 480);
+      drawSierpinski(40, 440, 400, fractalDepth, currentPrime);
+    }
+    
+    function updateRowTiming() {
+      const lengths = [5, 7, 9, 11, 13];
+      const primeOffset = PRIMES.indexOf(currentPrime) + 1;
+      const seedBits = Math.floor(fractalSeed * 4096);
+      
+      rowLength = rowLength.map((len, row) => {
+        const idx = (row + primeOffset + (seedBits >> row)) % lengths.length;
+        return lengths[idx];
+      });
     }
     
     // Update all notes when prime changes
@@ -170,10 +261,12 @@
       });
       document.getElementById('modeInfo').textContent = 
         `HARMONIC MODE: ${PRIME_NAMES[PRIMES.indexOf(prime)]}`;
+      drawFractal();
+      updateRowTiming();
       render();
     }
     
-    // Euclidean rhythm generator (Bjorklund algorithm)
+    // Euclidean rhythm generator
     function euclideanRhythm(steps, pulses) {
       if (pulses >= steps || pulses === 0) {
         return Array(steps).fill(pulses > 0);
@@ -192,14 +285,31 @@
       return pattern;
     }
     
-    // Generate fractal pattern using prime
     function generateEuclideanPattern() {
       const prime = currentPrime;
       buttons.forEach(btn => {
         const pattern = euclideanRhythm(8, prime % 8 || 1);
         btn.active = pattern[btn.col];
-        btn.color = btn.active ? getPrimeColor(btn.row) : '#1a1a1a';
       });
+      render();
+    }
+
+    // Fractal rhythm generator (polymetric Sierpinski-like)
+    function generateFractalPattern() {
+      const primeOffset = PRIMES.indexOf(currentPrime) + 1;
+      const seedBits = Math.floor(fractalSeed * 4096);
+      const densityGate = (seedBits >> 6) % 5; // 0..4
+      
+      buttons.forEach(btn => {
+        const rowLen = rowLength[btn.row];
+        const phase = Math.floor((btn.col * rowLen) / 8);
+        const r = (btn.row + primeOffset) % 8;
+        const c = (phase + (seedBits >> btn.row)) % rowLen;
+        const sierp = ((r & c) === 0);
+        const gate = ((r + c + primeOffset) % 5) >= densityGate;
+        btn.active = sierp && gate;
+      });
+      
       render();
     }
     
@@ -207,50 +317,52 @@
     let currentStep = 0;
     let bpm = 120;
     let intervalId = null;
+    let nextNoteTime = 0;
+    const lookahead = 25; // ms
+    const scheduleAheadTime = 0.1; // s
     
-    // Web Audio
-    let audioCtx = null;
-    
-    document.getElementById('audioBtn').onclick = () => {
+    function playNote(note, when = null) {
       if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        document.getElementById('audioBtn').textContent = 'AUDIO ENABLED';
-        document.getElementById('audioBtn').classList.add('active');
+        console.log('Audio context not ready');
+        return;
       }
-    };
-    
-    function playNote(note) {
-      if (!audioCtx) return;
+      const time = when ?? audioCtx.currentTime;
       
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      const filter = audioCtx.createBiquadFilter();
-      
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(audioCtx.destination);
-      
-      // MIDI note to frequency
-      const freq = 440 * Math.pow(2, (note - 69) / 12);
-      osc.frequency.value = freq;
-      osc.type = 'sawtooth'; // Richer harmonics
-      
-      // Low-pass filter for warmth
-      filter.type = 'lowpass';
-      filter.frequency.value = freq * 4;
-      filter.Q.value = 2;
-      
-      // Envelope
-      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-      
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.2);
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const filter = audioCtx.createBiquadFilter();
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        // MIDI note to frequency
+        const freq = 440 * Math.pow(2, (note - 69) / 12);
+        console.log(`Playing note ${note} at ${freq.toFixed(2)} Hz`);
+        
+        osc.frequency.value = freq;
+        osc.type = 'sawtooth';
+        
+        filter.type = 'lowpass';
+        filter.frequency.value = freq * 4;
+        filter.Q.value = 2;
+        
+        gain.gain.setValueAtTime(0.25, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+        
+        osc.start(time);
+        osc.stop(time + 0.2);
+      } catch (e) {
+        console.error('Audio error:', e);
+      }
     }
     
     // Render grid
     function render() {
-      ctx.fillStyle = '#000';
+      ctx.clearRect(0, 0, 480, 480);
+      // Let the fractal canvas show through a bit
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
       ctx.fillRect(0, 0, 480, 480);
       
       for (let i = 0; i < 64; i++) {
@@ -259,7 +371,6 @@
         const x = col * 60;
         const y = row * 60;
         
-        // Highlight current step
         const isCurrentStep = isPlaying && col === currentStep;
         
         if (isCurrentStep) {
@@ -267,11 +378,9 @@
           ctx.fillRect(x, y, 58, 58);
         }
         
-        // Button
         ctx.fillStyle = buttons[i].active ? buttons[i].color : '#0a0a0a';
         ctx.fillRect(x + 4, y + 4, 50, 50);
         
-        // Glow effect for active buttons
         if (buttons[i].active) {
           ctx.shadowBlur = 15;
           ctx.shadowColor = buttons[i].color;
@@ -280,28 +389,49 @@
           ctx.shadowBlur = 0;
         }
         
-        // Border
         ctx.strokeStyle = buttons[i].active ? '#fff' : (isCurrentStep ? '#333' : '#222');
         ctx.lineWidth = buttons[i].active ? 2 : 1;
         ctx.strokeRect(x + 4, y + 4, 50, 50);
       }
     }
     
-    // Sequencer step
-    function step() {
+    // Sequencer step (scheduled)
+    function scheduleStep(time) {
       for (let row = 0; row < 8; row++) {
-        const i = row * 8 + currentStep;
-        if (buttons[i].active) {
-          playNote(buttons[i].note);
-        }
+        const len = rowLength[row];
+        const phase = rowPhase[row] % len;
+        const col = Math.floor((phase * 8) / len);
+        const i = row * 8 + col;
+        if (buttons[i].active) playNote(buttons[i].note, time);
+        rowPhase[row] = (rowPhase[row] + 1) % (len * 2);
       }
       
       currentStep = (currentStep + 1) % 8;
+      stepCount += 1;
+      
+      if (currentStep === 0 && stepCount % 8 === 0) {
+        // Slowly morph time signatures to "breathe"
+        updateRowTiming();
+      }
       render();
+    }
+    
+    function scheduler() {
+      if (!audioCtx) return;
+      const stepDuration = (60 / bpm) / 2;
+      while (nextNoteTime < audioCtx.currentTime + scheduleAheadTime) {
+        scheduleStep(nextNoteTime);
+        nextNoteTime += stepDuration;
+      }
     }
     
     // Play/Stop
     document.getElementById('playBtn').onclick = () => {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('Audio context created on play');
+      }
+      
       isPlaying = !isPlaying;
       const btn = document.getElementById('playBtn');
       
@@ -309,8 +439,8 @@
         btn.textContent = 'STOP';
         btn.classList.add('playing');
         currentStep = 0;
-        const interval = (60 / bpm) * 1000 / 2;
-        intervalId = setInterval(step, interval);
+        nextNoteTime = audioCtx.currentTime + 0.05;
+        intervalId = setInterval(scheduler, lookahead);
       } else {
         btn.textContent = 'PLAY';
         btn.classList.remove('playing');
@@ -326,9 +456,7 @@
       document.getElementById('bpmValue').textContent = bpm;
       
       if (isPlaying) {
-        clearInterval(intervalId);
-        const interval = (60 / bpm) * 1000 / 2;
-        intervalId = setInterval(step, interval);
+        // Scheduler reads bpm each tick
       }
     };
     
@@ -340,8 +468,19 @@
       updatePrimeHarmonics(prime);
     };
     
+    // Fractal depth
+    document.getElementById('depthSlider').oninput = (e) => {
+      fractalDepth = parseInt(e.target.value);
+      document.getElementById('depthValue').textContent = fractalDepth;
+      drawFractal();
+    };
+    
     // Click handler
     canvas.onclick = (e) => {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
@@ -377,7 +516,17 @@
       generateEuclideanPattern();
     };
     
+    // Regenerate fractal
+    document.getElementById('fractalBtn').onclick = () => {
+      fractalSeed = Math.random();
+      drawFractal();
+      updateRowTiming();
+      generateFractalPattern();
+    };
+    
     // Initial render
+    drawFractal();
+    updateRowTiming();
     render();
   </script>
 </body>
