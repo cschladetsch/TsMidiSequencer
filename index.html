@@ -22,14 +22,22 @@
       filter: blur(1px);
     }
     #controls { 
-      display: flex; 
+      display: inline-flex; 
+      flex-direction: column;
       gap: 15px; 
-      align-items: center;
-      flex-wrap: wrap;
+      align-items: flex-start;
       background: #111;
       padding: 15px;
       border-radius: 8px;
     }
+    .controls-group {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .buttons-group { }
+    .sliders-group { }
     button {
       background: #222;
       color: #0f0;
@@ -132,43 +140,48 @@
   <h2>CHRISTIAN'S MUSIC THING</h2>
   
   <div id="controls">
-    <button id="playBtn">PLAY</button>
-    <button id="clearBtn">CLEAR</button>
-    <button id="randomBtn">RANDOM</button>
-    <button id="euclidBtn">EUCLIDEAN</button>
-    <button id="fractalBtn">FRACTAL</button>
-    <button id="autoFractalBtn">AUTO FRACTAL</button>
-    <button id="lockBtn">LOCK</button>
-    <button id="humanizeBtn">HUMANIZE</button>
-    
-    <div class="slider-group">
-      <label>BPM: <span id="bpmValue">120</span></label>
-      <input type="range" id="bpmSlider" min="60" max="240" value="120">
+    <div class="controls-group buttons-group">
+      <button id="playBtn">PLAY</button>
+      <button id="clearBtn">CLEAR</button>
+      <button id="randomBtn">RANDOM</button>
+      <button id="euclidBtn">EUCLIDEAN</button>
+      <button id="fractalBtn">FRACTAL</button>
+      <button id="autoFractalBtn">AUTO FRACTAL</button>
+      <button id="downloadMidiBtn">DOWNLOAD MIDI</button>
+      <button id="lockBtn">LOCK</button>
+      <button id="humanizeBtn">HUMANIZE</button>
     </div>
     
-    <div class="slider-group">
-      <label>Prime: <span id="primeValue">3</span></label>
-      <input type="range" id="primeSlider" min="0" max="7" value="1" step="1">
-    </div>
-    
-    <div class="slider-group">
-      <label>Fractal Depth: <span id="depthValue">5</span></label>
-      <input type="range" id="depthSlider" min="3" max="8" value="5" step="1">
-    </div>
+    <div class="controls-group sliders-group">
+      <div class="slider-group">
+        <label>BPM: <span id="bpmValue">120</span></label>
+        <input type="range" id="bpmSlider" min="60" max="240" value="120">
+      </div>
+      
+      <div class="slider-group">
+        <label>Prime: <span id="primeValue">3</span></label>
+        <input type="range" id="primeSlider" min="0" max="7" value="1" step="1">
+      </div>
+      
+      <div class="slider-group">
+        <label>Fractal Depth: <span id="depthValue">5</span></label>
+        <input type="range" id="depthSlider" min="3" max="8" value="5" step="1">
+      </div>
 
-    <div class="slider-group">
-      <label>Swing: <span id="swingValue">0</span></label>
-      <input type="range" id="swingSlider" min="0" max="30" value="0" step="1">
-    </div>
+      <div class="slider-group">
+        <label>Swing: <span id="swingValue">0</span></label>
+        <input type="range" id="swingSlider" min="0" max="30" value="0" step="1">
+      </div>
 
-    <div class="slider-group">
-      <label>Accent: <span id="accentValue">4</span></label>
-      <input type="range" id="accentSlider" min="1" max="8" value="4" step="1">
-    </div>
+      <div class="slider-group">
+        <label>Accent: <span id="accentValue">4</span></label>
+        <input type="range" id="accentSlider" min="1" max="8" value="4" step="1">
+      </div>
 
-    <div class="slider-group">
-      <label>Auto Every: <span id="autoEveryValue">4</span></label>
-      <input type="range" id="autoEverySlider" min="1" max="8" value="4" step="1">
+      <div class="slider-group">
+        <label>Auto Every: <span id="autoEveryValue">4</span></label>
+        <input type="range" id="autoEverySlider" min="1" max="8" value="4" step="1">
+      </div>
     </div>
   </div>
   
@@ -213,8 +226,8 @@
     
     let currentPrime = 3;
     let fractalDepth = 5;
-    let rows = 8;
-    let cols = 8;
+    let rows = 12;
+    let cols = 24;
     const cellSize = 60;
     let buttons = [];
     let rowMute = [];
@@ -230,6 +243,11 @@
     let phraseCount = 0;
     let autoStart = true;
     let autoStartTriggered = false;
+    let playClockMs = 0;
+    const eventLog = [];
+    const maxLogMs = 5 * 60 * 1000;
+    let tempoEvents = [{ timeMs: 0, bpm: 120 }];
+    const introPhrases = 4;
     
     // Initialize audio immediately
     window.addEventListener('click', () => {
@@ -259,14 +277,6 @@
           row, col
         };
       });
-      
-      // Set default pattern (simple beat)
-      if (cols >= 8 && rows >= 6) {
-        btns[0].active = true;            // Kick
-        btns[cols * 2].active = true;     // Snare
-        btns[cols * 4].active = true;     // Hi-hat
-        btns[cols * 5].active = true;     // Hi-hat
-      }
       
       return btns;
     }
@@ -362,6 +372,14 @@
         document.getElementById('accentValue').textContent = accentEvery;
       }
       
+      const autoEverySlider = document.getElementById('autoEverySlider');
+      autoEverySlider.max = String(cols);
+      if (autoEvery > cols) {
+        autoEvery = cols;
+        autoEverySlider.value = String(cols);
+        document.getElementById('autoEveryValue').textContent = autoEvery;
+      }
+      
       currentStep = 0;
       drawFractal();
       render();
@@ -372,6 +390,8 @@
     rowMute = Array(rows).fill(false);
     rowSolo = Array(rows).fill(false);
     renderRowControls();
+    document.getElementById('accentSlider').max = String(cols);
+    document.getElementById('autoEverySlider').max = String(cols);
     
     // Color based on prime factorization
     function getPrimeColor(row) {
@@ -529,25 +549,14 @@
       return !rowMute[row];
     }
     
-    function playNote(note, velocity = 1, delayMs = 0) {
+    function playNote(note, velocity = 1, delayMs = 0, detune = 0) {
       if (!audioCtx) {
         console.log('Audio context not ready');
         return;
       }
       
       try {
-        let effectiveDelay = delayMs;
-        let detune = 0;
-        let gainScale = velocity;
-        
-        if (humanizeOn) {
-          detune = (Math.random() * 2 - 1) * 8;
-          gainScale *= 1 + (Math.random() * 0.1 - 0.05);
-          effectiveDelay += (Math.random() * 16 - 8);
-        }
-        
-        if (effectiveDelay < 0) effectiveDelay = 0;
-        const now = audioCtx.currentTime + effectiveDelay / 1000;
+        const now = audioCtx.currentTime + Math.max(0, delayMs) / 1000;
         
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
@@ -567,7 +576,7 @@
         filter.frequency.value = freq * 4;
         filter.Q.value = 2;
         
-        const baseGain = 0.25 * gainScale;
+        const baseGain = 0.25 * velocity;
         gain.gain.setValueAtTime(baseGain, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
         
@@ -618,6 +627,16 @@
         ctx.lineWidth = buttons[i].active ? 2 : 1;
         ctx.strokeRect(x + pad, y + pad, box, box);
       }
+
+      // Playhead overlay so the column is always visible
+      if (isPlaying) {
+        const x = currentStep * cellSize;
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.08)';
+        ctx.fillRect(x, 0, cellSize, canvas.height);
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.35)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, 1, cellSize - 2, canvas.height - 2);
+      }
     }
     
     // Sequencer step
@@ -630,7 +649,19 @@
       for (let row = 0; row < rows; row++) {
         if (!rowAudible(row)) continue;
         const i = row * cols + currentStep;
-        if (buttons[i].active) playNote(buttons[i].note, velocity, swingMs);
+        if (buttons[i].active) {
+          let delayMs = swingMs;
+          let detune = 0;
+          let gainScale = velocity;
+          if (humanizeOn) {
+            detune = (Math.random() * 2 - 1) * 8;
+            gainScale *= 1 + (Math.random() * 0.1 - 0.05);
+            delayMs += (Math.random() * 16 - 8);
+          }
+          if (delayMs < 0) delayMs = 0;
+          playNote(buttons[i].note, gainScale, delayMs, detune);
+          eventLog.push({ timeMs: playClockMs + delayMs, note: buttons[i].note, velocity: gainScale });
+        }
       }
       
       currentStep = (currentStep + 1) % cols;
@@ -640,6 +671,9 @@
           regenerateFractal();
         }
       }
+      playClockMs += intervalMs;
+      const cutoff = playClockMs - maxLogMs;
+      while (eventLog.length && eventLog[0].timeMs < cutoff) eventLog.shift();
       render();
     }
     
@@ -651,6 +685,11 @@
       btn.classList.add('playing');
       currentStep = 0;
       phraseCount = 0;
+      playClockMs = 0;
+      tempoEvents = [{ timeMs: 0, bpm }];
+      if (!buttons.some(b => b.active)) {
+        regenerateFractal();
+      }
       const interval = (60 / bpm) * 1000 / 2;
       intervalId = setInterval(step, interval);
     }
@@ -686,6 +725,7 @@
       document.getElementById('bpmValue').textContent = bpm;
       
       if (isPlaying) {
+        tempoEvents.push({ timeMs: playClockMs, bpm });
         clearInterval(intervalId);
         const interval = (60 / bpm) * 1000 / 2;
         intervalId = setInterval(step, interval);
@@ -741,6 +781,132 @@
     document.getElementById('autoFractalBtn').onclick = () => {
       autoFractal = !autoFractal;
       document.getElementById('autoFractalBtn').classList.toggle('active', autoFractal);
+    };
+
+    function writeVlq(value) {
+      const bytes = [];
+      let buffer = value & 0x7F;
+      while ((value >>= 7)) {
+        buffer <<= 8;
+        buffer |= ((value & 0x7F) | 0x80);
+      }
+      while (true) {
+        bytes.push(buffer & 0xFF);
+        if (buffer & 0x80) buffer >>= 8;
+        else break;
+      }
+      return bytes;
+    }
+    
+    function buildMidiFile(exportMinutes) {
+      const ticksPerBeat = 480;
+      const endTime = isPlaying ? playClockMs : (eventLog.length ? eventLog[eventLog.length - 1].timeMs : 0);
+      const startTime = Math.max(0, endTime - exportMinutes * 60 * 1000);
+      
+      const map = buildTempoMap(startTime, endTime);
+      
+      const events = eventLog
+        .filter(e => e.timeMs >= startTime && e.timeMs <= endTime)
+        .map(e => ({
+          tick: Math.max(0, msToTicks(e.timeMs, map)),
+          note: e.note,
+          velocity: Math.max(1, Math.min(127, Math.round(e.velocity * 96)))
+        }));
+      const noteTicks = 120;
+      
+      const trackEvents = [];
+      for (const t of map) {
+        trackEvents.push({ tick: msToTicks(t.timeMs, map), data: [0xFF, 0x51, 0x03, ...tempoBytes(t.bpm)] });
+      }
+      
+      for (const ev of events) {
+        trackEvents.push({ tick: ev.tick, data: [0x90, ev.note & 0x7F, ev.velocity] });
+        trackEvents.push({ tick: ev.tick + noteTicks, data: [0x80, ev.note & 0x7F, 0x00] });
+      }
+      
+      trackEvents.sort((a, b) => a.tick - b.tick);
+      
+      const trackData = [];
+      let lastTick = 0;
+      for (const ev of trackEvents) {
+        const delta = ev.tick - lastTick;
+        trackData.push(...writeVlq(delta), ...ev.data);
+        lastTick = ev.tick;
+      }
+      trackData.push(0x00, 0xFF, 0x2F, 0x00);
+      
+      const header = [
+        ...strBytes('MThd'),
+        0x00, 0x00, 0x00, 0x06,
+        0x00, 0x00,
+        0x00, 0x01,
+        (ticksPerBeat >> 8) & 0xFF, ticksPerBeat & 0xFF
+      ];
+      
+      const trackHeader = [
+        ...strBytes('MTrk'),
+        ...u32Bytes(trackData.length)
+      ];
+      
+      return new Uint8Array([...header, ...trackHeader, ...trackData]);
+    }
+    
+    function tempoBytes(bpmVal) {
+      const mpq = Math.round(60000000 / bpmVal);
+      return [(mpq >> 16) & 0xFF, (mpq >> 8) & 0xFF, mpq & 0xFF];
+    }
+
+    function buildTempoMap(startTime, endTime) {
+      const sorted = tempoEvents.slice().sort((a, b) => a.timeMs - b.timeMs);
+      let idx = 0;
+      while (idx + 1 < sorted.length && sorted[idx + 1].timeMs <= startTime) idx++;
+      const currentBpm = sorted[idx] ? sorted[idx].bpm : bpm;
+      const map = [{ timeMs: startTime, bpm: currentBpm }];
+      for (const ev of sorted) {
+        if (ev.timeMs > startTime && ev.timeMs <= endTime) {
+          map.push({ timeMs: ev.timeMs, bpm: ev.bpm });
+        }
+      }
+      return map;
+    }
+
+    function msToTicks(timeMs, map) {
+      let ticks = 0;
+      for (let i = 0; i < map.length; i++) {
+        const segStart = map[i].timeMs;
+        const segEnd = (i + 1 < map.length) ? map[i + 1].timeMs : timeMs;
+        if (timeMs <= segStart) break;
+        const end = Math.min(timeMs, segEnd);
+        if (end > segStart) {
+          const ticksPerMs = (ticksPerBeat * map[i].bpm) / 60000;
+          ticks += (end - segStart) * ticksPerMs;
+        }
+      }
+      return Math.round(ticks);
+    }
+    
+    function u32Bytes(n) {
+      return [(n >> 24) & 0xFF, (n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF];
+    }
+    
+    function strBytes(str) {
+      return Array.from(str).map(ch => ch.charCodeAt(0));
+    }
+    
+    document.getElementById('downloadMidiBtn').onclick = () => {
+      const input = prompt('MIDI length in minutes (1-60):', '5');
+      if (input === null) return;
+      const minutes = Math.max(1, Math.min(60, parseInt(input, 10) || 5));
+      const data = buildMidiFile(minutes);
+      const blob = new Blob([data], { type: 'audio/midi' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'christian-music-thing.mid';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     };
     
     // Click handler
