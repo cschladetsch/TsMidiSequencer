@@ -1,18 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AKAI Step Sequencer</title>
+  <title>Prime Harmonic Fractal Sequencer</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { 
-      background: #1a1a1a; 
+      background: #0a0a0a; 
       color: #fff; 
-      font-family: monospace; 
+      font-family: 'Courier New', monospace; 
       padding: 20px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 20px;
+      gap: 15px;
     }
     canvas { border: 2px solid #333; cursor: pointer; }
     #controls { 
@@ -20,23 +20,32 @@
       gap: 15px; 
       align-items: center;
       flex-wrap: wrap;
+      background: #111;
+      padding: 15px;
+      border-radius: 8px;
     }
     button {
-      background: #333;
-      color: #fff;
-      border: 1px solid #555;
+      background: #222;
+      color: #0f0;
+      border: 1px solid #0f0;
       padding: 10px 20px;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 14px;
-      min-width: 100px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      min-width: 120px;
+      transition: all 0.2s;
     }
-    button:hover { background: #444; }
-    button.active { background: #0a0; }
-    button.playing { background: #00f; animation: pulse 0.5s infinite; }
+    button:hover { background: #333; box-shadow: 0 0 10px #0f0; }
+    button.active { background: #0a0; color: #000; }
+    button.playing { 
+      background: #00f; 
+      color: #fff;
+      animation: pulse 0.5s infinite; 
+    }
     @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
+      0%, 100% { box-shadow: 0 0 5px #00f; }
+      50% { box-shadow: 0 0 20px #00f; }
     }
     .slider-group {
       display: flex;
@@ -47,36 +56,152 @@
       width: 150px;
     }
     label {
-      font-size: 12px;
-      color: #999;
+      font-size: 11px;
+      color: #0f0;
+      text-transform: uppercase;
+    }
+    h2 {
+      color: #0f0;
+      text-shadow: 0 0 10px #0f0;
+      letter-spacing: 2px;
+    }
+    .info {
+      color: #666;
+      font-size: 11px;
+      max-width: 600px;
+      text-align: center;
+      line-height: 1.5;
+    }
+    .mode-info {
+      background: #111;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: #0f0;
+      border: 1px solid #0f0;
     }
   </style>
 </head>
 <body>
-  <h2>AKAI Step Sequencer</h2>
+  <h2>⬢ PRIME HARMONIC FRACTAL SEQUENCER ⬢</h2>
+  
   <div id="controls">
-    <button id="audioBtn">Enable Audio</button>
-    <button id="playBtn">Play</button>
-    <button id="clearBtn">Clear Grid</button>
+    <button id="audioBtn">ENABLE AUDIO</button>
+    <button id="playBtn">PLAY</button>
+    <button id="clearBtn">CLEAR</button>
+    <button id="randomBtn">RANDOM</button>
+    <button id="euclidBtn">EUCLIDEAN</button>
+    
     <div class="slider-group">
       <label>BPM: <span id="bpmValue">120</span></label>
-      <input type="range" id="bpmSlider" min="60" max="200" value="120">
+      <input type="range" id="bpmSlider" min="60" max="240" value="120">
+    </div>
+    
+    <div class="slider-group">
+      <label>Prime: <span id="primeValue">3</span></label>
+      <input type="range" id="primeSlider" min="0" max="7" value="1" step="1">
     </div>
   </div>
+  
+  <div class="mode-info" id="modeInfo">
+    HARMONIC MODE: Perfect Fifth (3:2 ratio)
+  </div>
+  
   <canvas id="grid" width="480" height="480"></canvas>
-  <p style="color: #666; font-size: 12px; margin-top: 10px;">
-    Click buttons to create pattern • 8 steps (columns) × 8 notes (rows) • Each row = different pitch
-  </p>
+  
+  <div class="info">
+    Click to toggle notes • Colors = prime harmonics • Rows = overtone series • Columns = time steps<br>
+    Euclidean mode generates fractal rhythms using prime number divisions
+  </div>
   
   <script type="module">
+    // Prime numbers for harmonic ratios
+    const PRIMES = [2, 3, 5, 7, 11, 13, 17, 19];
+    const PRIME_NAMES = [
+      'Octave (2:1)',
+      'Perfect Fifth (3:2)', 
+      'Major Third (5:4)',
+      'Harmonic Seventh (7:4)',
+      'Eleventh (11:8)',
+      'Tridecimal (13:8)',
+      'Seventeenth (17:16)',
+      'Nineteenth (19:16)'
+    ];
+    
     // State
     const canvas = document.getElementById('grid');
     const ctx = canvas.getContext('2d');
-    const buttons = Array(64).fill().map((_, i) => ({ 
-      active: false, 
-      color: '#2a2a2a',
-      note: 60 + (7 - Math.floor(i / 8)) * 2  // Higher rows = higher notes
-    }));
+    let currentPrime = 3;
+    let buttons = initButtons();
+    
+    function initButtons() {
+      return Array(64).fill().map((_, i) => {
+        const row = Math.floor(i / 8);
+        const col = i % 8;
+        return {
+          active: false,
+          color: getPrimeColor(row),
+          note: getHarmonicNote(row, currentPrime),
+          row, col
+        };
+      });
+    }
+    
+    // Color based on prime factorization
+    function getPrimeColor(row) {
+      const hue = (row * 137.508) % 360; // Golden angle
+      return `hsl(${hue}, 70%, 30%)`;
+    }
+    
+    // Calculate note using just intonation based on prime ratios
+    function getHarmonicNote(row, prime) {
+      const baseNote = 48; // C3
+      const ratio = prime / 2; // Just intonation ratio
+      const octave = Math.floor(row / prime);
+      return baseNote + (row % prime) * (Math.log2(ratio) * 12) + (octave * 12);
+    }
+    
+    // Update all notes when prime changes
+    function updatePrimeHarmonics(prime) {
+      currentPrime = prime;
+      buttons.forEach(btn => {
+        btn.note = getHarmonicNote(btn.row, prime);
+        btn.color = getPrimeColor(btn.row);
+      });
+      document.getElementById('modeInfo').textContent = 
+        `HARMONIC MODE: ${PRIME_NAMES[PRIMES.indexOf(prime)]}`;
+      render();
+    }
+    
+    // Euclidean rhythm generator (Bjorklund algorithm)
+    function euclideanRhythm(steps, pulses) {
+      if (pulses >= steps || pulses === 0) {
+        return Array(steps).fill(pulses > 0);
+      }
+      
+      let pattern = Array(steps).fill(false);
+      let bucket = 0;
+      
+      for (let i = 0; i < steps; i++) {
+        bucket += pulses;
+        if (bucket >= steps) {
+          bucket -= steps;
+          pattern[i] = true;
+        }
+      }
+      return pattern;
+    }
+    
+    // Generate fractal pattern using prime
+    function generateEuclideanPattern() {
+      const prime = currentPrime;
+      buttons.forEach(btn => {
+        const pattern = euclideanRhythm(8, prime % 8 || 1);
+        btn.active = pattern[btn.col];
+        btn.color = btn.active ? getPrimeColor(btn.row) : '#1a1a1a';
+      });
+      render();
+    }
     
     let isPlaying = false;
     let currentStep = 0;
@@ -89,7 +214,7 @@
     document.getElementById('audioBtn').onclick = () => {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        document.getElementById('audioBtn').textContent = 'Audio Enabled';
+        document.getElementById('audioBtn').textContent = 'AUDIO ENABLED';
         document.getElementById('audioBtn').classList.add('active');
       }
     };
@@ -99,21 +224,28 @@
       
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
+      const filter = audioCtx.createBiquadFilter();
       
-      osc.connect(gain);
+      osc.connect(filter);
+      filter.connect(gain);
       gain.connect(audioCtx.destination);
       
       // MIDI note to frequency
       const freq = 440 * Math.pow(2, (note - 69) / 12);
       osc.frequency.value = freq;
-      osc.type = 'square';
+      osc.type = 'sawtooth'; // Richer harmonics
       
-      // Shorter envelope for sequencer
-      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+      // Low-pass filter for warmth
+      filter.type = 'lowpass';
+      filter.frequency.value = freq * 4;
+      filter.Q.value = 2;
+      
+      // Envelope
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
       
       osc.start();
-      osc.stop(audioCtx.currentTime + 0.15);
+      osc.stop(audioCtx.currentTime + 0.2);
     }
     
     // Render grid
@@ -127,18 +259,29 @@
         const x = col * 60;
         const y = row * 60;
         
-        // Highlight current step column
+        // Highlight current step
         const isCurrentStep = isPlaying && col === currentStep;
         
         if (isCurrentStep) {
-          ctx.fillStyle = '#222';
+          ctx.fillStyle = '#1a1a1a';
           ctx.fillRect(x, y, 58, 58);
         }
         
-        ctx.fillStyle = buttons[i].color;
+        // Button
+        ctx.fillStyle = buttons[i].active ? buttons[i].color : '#0a0a0a';
         ctx.fillRect(x + 4, y + 4, 50, 50);
         
-        ctx.strokeStyle = buttons[i].active ? '#fff' : (isCurrentStep ? '#555' : '#333');
+        // Glow effect for active buttons
+        if (buttons[i].active) {
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = buttons[i].color;
+          ctx.fillStyle = buttons[i].color;
+          ctx.fillRect(x + 4, y + 4, 50, 50);
+          ctx.shadowBlur = 0;
+        }
+        
+        // Border
+        ctx.strokeStyle = buttons[i].active ? '#fff' : (isCurrentStep ? '#333' : '#222');
         ctx.lineWidth = buttons[i].active ? 2 : 1;
         ctx.strokeRect(x + 4, y + 4, 50, 50);
       }
@@ -146,7 +289,6 @@
     
     // Sequencer step
     function step() {
-      // Play all active buttons in current column
       for (let row = 0; row < 8; row++) {
         const i = row * 8 + currentStep;
         if (buttons[i].active) {
@@ -164,13 +306,13 @@
       const btn = document.getElementById('playBtn');
       
       if (isPlaying) {
-        btn.textContent = 'Stop';
+        btn.textContent = 'STOP';
         btn.classList.add('playing');
         currentStep = 0;
-        const interval = (60 / bpm) * 1000 / 2;  // 16th notes
+        const interval = (60 / bpm) * 1000 / 2;
         intervalId = setInterval(step, interval);
       } else {
-        btn.textContent = 'Play';
+        btn.textContent = 'PLAY';
         btn.classList.remove('playing');
         clearInterval(intervalId);
         currentStep = 0;
@@ -183,12 +325,19 @@
       bpm = parseInt(e.target.value);
       document.getElementById('bpmValue').textContent = bpm;
       
-      // Update interval if playing
       if (isPlaying) {
         clearInterval(intervalId);
         const interval = (60 / bpm) * 1000 / 2;
         intervalId = setInterval(step, interval);
       }
+    };
+    
+    // Prime selector
+    document.getElementById('primeSlider').oninput = (e) => {
+      const idx = parseInt(e.target.value);
+      const prime = PRIMES[idx];
+      document.getElementById('primeValue').textContent = prime;
+      updatePrimeHarmonics(prime);
     };
     
     // Click handler
@@ -200,9 +349,7 @@
       
       if (i >= 0 && i < 64) {
         buttons[i].active = !buttons[i].active;
-        buttons[i].color = buttons[i].active ? '#0f0' : '#2a2a2a';
         
-        // Preview note when clicking
         if (buttons[i].active && !isPlaying) {
           playNote(buttons[i].note);
         }
@@ -211,13 +358,23 @@
       }
     };
     
-    // Clear button
+    // Clear
     document.getElementById('clearBtn').onclick = () => {
+      buttons.forEach(btn => btn.active = false);
+      render();
+    };
+    
+    // Random
+    document.getElementById('randomBtn').onclick = () => {
       buttons.forEach(btn => {
-        btn.active = false;
-        btn.color = '#2a2a2a';
+        btn.active = Math.random() > 0.7;
       });
       render();
+    };
+    
+    // Euclidean
+    document.getElementById('euclidBtn').onclick = () => {
+      generateEuclideanPattern();
     };
     
     // Initial render
