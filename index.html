@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Prime Harmonic Fractal Sequencer</title>
+  <title>Christian's Music Thing</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { 
@@ -129,7 +129,7 @@
   </style>
 </head>
 <body>
-  <h2>PRIME HARMONIC FRACTAL SEQUENCER</h2>
+  <h2>CHRISTIAN'S MUSIC THING</h2>
   
   <div id="controls">
     <button id="playBtn">PLAY</button>
@@ -222,18 +222,28 @@
     let audioCtx = null;
     let fractalSeed = Math.random();
     let isLocked = false;
-    let humanizeOn = false;
+    let humanizeOn = true;
     let swingAmount = 0;
     let accentEvery = 4;
-    let autoFractal = false;
+    let autoFractal = true;
     let autoEvery = 4;
     let phraseCount = 0;
+    let autoStart = true;
+    let autoStartTriggered = false;
     
     // Initialize audio immediately
     window.addEventListener('click', () => {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         console.log('Audio context created');
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      if (autoStart && !autoStartTriggered) {
+        autoStartTriggered = true;
+        startPlayback();
+        autoStart = false;
       }
     }, { once: true });
     
@@ -273,19 +283,26 @@
     function renderRowControls() {
       const container = document.getElementById('rowControls');
       container.innerHTML = '';
+      container.style.height = `${rows * cellSize}px`;
+      const scale = Math.max(0.75, Math.min(1.1, cellSize / 60));
       for (let row = 0; row < rows; row++) {
         const wrap = document.createElement('div');
         wrap.className = 'row-control';
+        wrap.style.height = `${cellSize}px`;
+        wrap.style.alignItems = 'center';
         
         const label = document.createElement('span');
         label.textContent = String(row + 1).padStart(2, '0');
-        label.style.fontSize = '10px';
+        label.style.fontSize = `${Math.round(10 * scale)}px`;
         label.style.color = '#666';
-        label.style.minWidth = '20px';
+        label.style.minWidth = `${Math.round(20 * scale)}px`;
         
         const muteBtn = document.createElement('button');
         muteBtn.textContent = 'M';
         muteBtn.classList.toggle('active', rowMute[row]);
+        muteBtn.style.fontSize = `${Math.round(10 * scale)}px`;
+        muteBtn.style.minWidth = `${Math.round(34 * scale)}px`;
+        muteBtn.style.padding = `${Math.round(6 * scale)}px ${Math.round(6 * scale)}px`;
         muteBtn.onclick = () => {
           rowMute[row] = !rowMute[row];
           renderRowControls();
@@ -294,6 +311,9 @@
         const soloBtn = document.createElement('button');
         soloBtn.textContent = 'S';
         soloBtn.classList.toggle('active', rowSolo[row]);
+        soloBtn.style.fontSize = `${Math.round(10 * scale)}px`;
+        soloBtn.style.minWidth = `${Math.round(34 * scale)}px`;
+        soloBtn.style.padding = `${Math.round(6 * scale)}px ${Math.round(6 * scale)}px`;
         soloBtn.onclick = () => {
           rowSolo[row] = !rowSolo[row];
           renderRowControls();
@@ -623,6 +643,29 @@
       render();
     }
     
+    function startPlayback() {
+      if (isPlaying) return;
+      isPlaying = true;
+      const btn = document.getElementById('playBtn');
+      btn.textContent = 'STOP';
+      btn.classList.add('playing');
+      currentStep = 0;
+      phraseCount = 0;
+      const interval = (60 / bpm) * 1000 / 2;
+      intervalId = setInterval(step, interval);
+    }
+    
+    function stopPlayback() {
+      if (!isPlaying) return;
+      isPlaying = false;
+      const btn = document.getElementById('playBtn');
+      btn.textContent = 'PLAY';
+      btn.classList.remove('playing');
+      clearInterval(intervalId);
+      currentStep = 0;
+      render();
+    }
+    
     // Play/Stop
     document.getElementById('playBtn').onclick = () => {
       if (!audioCtx) {
@@ -630,22 +673,10 @@
         console.log('Audio context created on play');
       }
       
-      isPlaying = !isPlaying;
-      const btn = document.getElementById('playBtn');
-      
       if (isPlaying) {
-        btn.textContent = 'STOP';
-        btn.classList.add('playing');
-        currentStep = 0;
-        phraseCount = 0;
-        const interval = (60 / bpm) * 1000 / 2;
-        intervalId = setInterval(step, interval);
+        stopPlayback();
       } else {
-        btn.textContent = 'PLAY';
-        btn.classList.remove('playing');
-        clearInterval(intervalId);
-        currentStep = 0;
-        render();
+        startPlayback();
       }
     };
     
@@ -798,6 +829,14 @@
     // Initial render
     drawFractal();
     render();
+
+    // Default states
+    document.getElementById('autoFractalBtn').classList.add('active');
+    document.getElementById('humanizeBtn').classList.add('active');
+    if (autoStart) {
+      document.getElementById('playBtn').textContent = 'STOP';
+      document.getElementById('playBtn').classList.add('playing');
+    }
   </script>
 </body>
 </html>
