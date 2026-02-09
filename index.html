@@ -78,6 +78,11 @@
       text-align: center;
       line-height: 1.5;
     }
+    .credit {
+      color: #555;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+    }
     .mode-info {
       background: #111;
       padding: 10px;
@@ -93,14 +98,14 @@
   </style>
 </head>
 <body>
-  <h2>⬢ PRIME HARMONIC FRACTAL SEQUENCER ⬢</h2>
+  <h2>PRIME HARMONIC FRACTAL SEQUENCER</h2>
   
   <div id="controls">
     <button id="playBtn">PLAY</button>
     <button id="clearBtn">CLEAR</button>
     <button id="randomBtn">RANDOM</button>
     <button id="euclidBtn">EUCLIDEAN</button>
-    <button id="fractalBtn">REGENERATE FRACTAL</button>
+    <button id="fractalBtn">FRACTAL</button>
     
     <div class="slider-group">
       <label>BPM: <span id="bpmValue">120</span></label>
@@ -129,7 +134,8 @@
   
   <div class="info">
     Click to toggle notes • Colors = prime harmonics • Rows = overtone series • Columns = time steps<br>
-    Euclidean mode generates fractal rhythms • Background = Sierpinski triangle from current prime
+    Euclidean mode generates fractal rhythms • Background = Sierpinski triangle from current prime<br>
+    <span class="credit">christian.schladetsch@gmail.com</span>
   </div>
   
   <script type="module">
@@ -157,9 +163,6 @@
     let buttons = initButtons();
     let audioCtx = null;
     let fractalSeed = Math.random();
-    let rowPhase = Array(8).fill(0);
-    let rowLength = Array(8).fill(8);
-    let stepCount = 0;
     
     // Initialize audio immediately
     window.addEventListener('click', () => {
@@ -241,16 +244,6 @@
       drawSierpinski(40, 440, 400, fractalDepth, currentPrime);
     }
     
-    function updateRowTiming() {
-      const lengths = [5, 7, 9, 11, 13];
-      const primeOffset = PRIMES.indexOf(currentPrime) + 1;
-      const seedBits = Math.floor(fractalSeed * 4096);
-      
-      rowLength = rowLength.map((len, row) => {
-        const idx = (row + primeOffset + (seedBits >> row)) % lengths.length;
-        return lengths[idx];
-      });
-    }
     
     // Update all notes when prime changes
     function updatePrimeHarmonics(prime) {
@@ -262,7 +255,6 @@
       document.getElementById('modeInfo').textContent = 
         `HARMONIC MODE: ${PRIME_NAMES[PRIMES.indexOf(prime)]}`;
       drawFractal();
-      updateRowTiming();
       render();
     }
     
@@ -294,17 +286,38 @@
       render();
     }
 
-    // Fractal rhythm generator (polymetric Sierpinski-like)
+    function rotatePattern(pattern, offset) {
+      const out = Array(pattern.length);
+      for (let i = 0; i < pattern.length; i++) {
+        out[(i + offset) % pattern.length] = pattern[i];
+      }
+      return out;
+    }
+
+    function generateEuclideanPatternWithSeed() {
+      const prime = currentPrime;
+      const seedBits = Math.floor(fractalSeed * 4096);
+      
+      buttons.forEach(btn => {
+        const pulses = ((prime + btn.row + ((seedBits >> btn.row) & 3)) % 8) || 1;
+        const base = euclideanRhythm(8, pulses);
+        const rot = (seedBits + btn.row * 3) % 8;
+        const pattern = rotatePattern(base, rot);
+        btn.active = pattern[btn.col];
+      });
+      
+      render();
+    }
+
+    // Fractal rhythm generator (Sierpinski-like across grid)
     function generateFractalPattern() {
       const primeOffset = PRIMES.indexOf(currentPrime) + 1;
       const seedBits = Math.floor(fractalSeed * 4096);
       const densityGate = (seedBits >> 6) % 5; // 0..4
       
       buttons.forEach(btn => {
-        const rowLen = rowLength[btn.row];
-        const phase = Math.floor((btn.col * rowLen) / 8);
         const r = (btn.row + primeOffset) % 8;
-        const c = (phase + (seedBits >> btn.row)) % rowLen;
+        const c = (btn.col + (seedBits >> btn.row)) % 8;
         const sierp = ((r & c) === 0);
         const gate = ((r + c + primeOffset) % 5) >= densityGate;
         btn.active = sierp && gate;
@@ -317,16 +330,12 @@
     let currentStep = 0;
     let bpm = 120;
     let intervalId = null;
-    let nextNoteTime = 0;
-    const lookahead = 25; // ms
-    const scheduleAheadTime = 0.1; // s
     
-    function playNote(note, when = null) {
+    function playNote(note) {
       if (!audioCtx) {
         console.log('Audio context not ready');
         return;
       }
-      const time = when ?? audioCtx.currentTime;
       
       try {
         const osc = audioCtx.createOscillator();
@@ -339,8 +348,6 @@
         
         // MIDI note to frequency
         const freq = 440 * Math.pow(2, (note - 69) / 12);
-        console.log(`Playing note ${note} at ${freq.toFixed(2)} Hz`);
-        
         osc.frequency.value = freq;
         osc.type = 'sawtooth';
         
@@ -348,11 +355,12 @@
         filter.frequency.value = freq * 4;
         filter.Q.value = 2;
         
-        gain.gain.setValueAtTime(0.25, time);
-        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+        const now = audioCtx.currentTime;
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
         
-        osc.start(time);
-        osc.stop(time + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.2);
       } catch (e) {
         console.error('Audio error:', e);
       }
@@ -395,34 +403,15 @@
       }
     }
     
-    // Sequencer step (scheduled)
-    function scheduleStep(time) {
+    // Sequencer step
+    function step() {
       for (let row = 0; row < 8; row++) {
-        const len = rowLength[row];
-        const phase = rowPhase[row] % len;
-        const col = Math.floor((phase * 8) / len);
-        const i = row * 8 + col;
-        if (buttons[i].active) playNote(buttons[i].note, time);
-        rowPhase[row] = (rowPhase[row] + 1) % (len * 2);
+        const i = row * 8 + currentStep;
+        if (buttons[i].active) playNote(buttons[i].note);
       }
       
       currentStep = (currentStep + 1) % 8;
-      stepCount += 1;
-      
-      if (currentStep === 0 && stepCount % 8 === 0) {
-        // Slowly morph time signatures to "breathe"
-        updateRowTiming();
-      }
       render();
-    }
-    
-    function scheduler() {
-      if (!audioCtx) return;
-      const stepDuration = (60 / bpm) / 2;
-      while (nextNoteTime < audioCtx.currentTime + scheduleAheadTime) {
-        scheduleStep(nextNoteTime);
-        nextNoteTime += stepDuration;
-      }
     }
     
     // Play/Stop
@@ -439,8 +428,8 @@
         btn.textContent = 'STOP';
         btn.classList.add('playing');
         currentStep = 0;
-        nextNoteTime = audioCtx.currentTime + 0.05;
-        intervalId = setInterval(scheduler, lookahead);
+        const interval = (60 / bpm) * 1000 / 2;
+        intervalId = setInterval(step, interval);
       } else {
         btn.textContent = 'PLAY';
         btn.classList.remove('playing');
@@ -456,7 +445,9 @@
       document.getElementById('bpmValue').textContent = bpm;
       
       if (isPlaying) {
-        // Scheduler reads bpm each tick
+        clearInterval(intervalId);
+        const interval = (60 / bpm) * 1000 / 2;
+        intervalId = setInterval(step, interval);
       }
     };
     
@@ -513,20 +504,19 @@
     
     // Euclidean
     document.getElementById('euclidBtn').onclick = () => {
-      generateEuclideanPattern();
+      generateEuclideanPatternWithSeed();
     };
     
     // Regenerate fractal
     document.getElementById('fractalBtn').onclick = () => {
       fractalSeed = Math.random();
       drawFractal();
-      updateRowTiming();
       generateFractalPattern();
+      generateEuclideanPatternWithSeed();
     };
     
     // Initial render
     drawFractal();
-    updateRowTiming();
     render();
   </script>
 </body>
