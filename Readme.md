@@ -1,4 +1,4 @@
-# Christian's Music Thing
+# Fractal Grid Sequencer
 
 Standalone browser tracker/sequencer with generative rhythm tools and a subtle animated background.
 
@@ -19,10 +19,6 @@ Standalone browser tracker/sequencer with generative rhythm tools and a subtle a
 Open `index.html` directly in a modern browser.
 
 **Tip:** If audio doesn't start automatically, click anywhere in the page to unlock audio playback.
-
-**Caching note:** The service worker (for caching Tone.js + audio assets) only works over `http://` or `https://`. If you open via `file://`, caching is disabled.
-
-**Tone.js note:** For `file://` usage, place a local `tone.min.js` in the repo (same folder as `index.html`). If you serve over `http://`, it will fall back to the CDN.
 
 ## Controls Overview
 - **PLAY**: Start/stop playback.
