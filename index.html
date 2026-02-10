@@ -304,8 +304,10 @@
     let buttons = [];
     let rowMute = [];
     let rowSolo = [];
+    const voiceRows = 1;
     let rowPanValues = [];
     let rowGainValues = [];
+    let rowVoiceState = [];
     let toneReady = false;
     let audioCtx = null;
     let fractalSeed = Math.random();
@@ -319,6 +321,15 @@
     let phraseCount = 0;
     let autoStart = true;
     let autoStartTriggered = false;
+    const songForm = [
+      { name: "Verse", phrases: 4, density: 45, accent: 5, swing: 6, muteHigh: 2 },
+      { name: "Chorus", phrases: 4, density: 70, accent: 3, swing: 3, muteHigh: 0 },
+      { name: "Verse", phrases: 4, density: 50, accent: 5, swing: 6, muteHigh: 1 },
+      { name: "Bridge", phrases: 2, density: 18, accent: 7, swing: 9, muteHigh: 4 },
+      { name: "Chorus", phrases: 4, density: 72, accent: 3, swing: 2, muteHigh: 0 }
+    ];
+    let formIndex = 0;
+    let formPhrase = 0;
     let playClockMs = 0;
     const eventLog = [];
     const maxLogMs = 5 * 60 * 1000;
@@ -332,6 +343,13 @@
     let playheadStep = 0;
     let playheadDelayMs = 0;
     let renderRaf = null;
+    const VOICE_VOWELS = [
+      { f1: 800, f2: 1150 },  // "ah"
+      { f1: 400, f2: 2000 },  // "ee"
+      { f1: 350, f2: 1700 },  // "ih"
+      { f1: 450, f2: 800 },   // "oh"
+      { f1: 325, f2: 700 }    // "oo"
+    ];
     let rowInstruments = [];
     let rowPanners = [];
     let rowGains = [];
@@ -366,9 +384,63 @@
       for (let row = 0; row < rows; row++) {
         const gain = new Tone.Gain(rowGainValues[row] ?? 0.8);
         const pan = new Tone.Panner(rowPan(row)).toDestination();
-        const make = factories[row % factories.length];
-        const inst = make ? make() : new Tone.Synth();
-        inst.connect(gain);
+        let inst;
+        if (row === 0) {
+          inst = new Tone.MonoSynth({
+            oscillator: { type: "sawtooth" },
+            filter: { Q: 1, type: "lowpass", rolloff: -24 },
+            envelope: { attack: 0.005, decay: 0.2, sustain: 0.3, release: 0.4 },
+            filterEnvelope: { attack: 0.005, decay: 0.15, sustain: 0.2, release: 0.3, baseFrequency: 60, octaves: 2.5 }
+          });
+          inst.volume.value = -6;
+        } else if (isVoiceRow(row)) {
+          const synth = new Tone.Synth({
+            oscillator: { type: "triangle" },
+            envelope: { attack: 0.02, decay: 0.12, sustain: 0.2, release: 0.3 }
+          });
+          synth.volume.value = -2;
+          const dry = new Tone.Gain(0.9);
+          const f1 = new Tone.Filter(VOICE_VOWELS[0].f1, "bandpass");
+          f1.Q.value = 2.5;
+          const f2 = new Tone.Filter(VOICE_VOWELS[0].f2, "bandpass");
+          f2.Q.value = 2.5;
+          const mix = new Tone.Gain(1.2);
+          synth.connect(dry);
+          synth.connect(f1);
+          synth.connect(f2);
+          dry.connect(mix);
+          f1.connect(mix);
+          f2.connect(mix);
+          inst = {
+            output: mix,
+            synth,
+            dry,
+            f1,
+            f2,
+            mix,
+            triggerAttackRelease: (note, dur, time, vel) => {
+              const v = VOICE_VOWELS[Math.floor(Math.random() * VOICE_VOWELS.length)];
+              f1.frequency.setValueAtTime(v.f1, time);
+              f2.frequency.setValueAtTime(v.f2, time);
+              synth.triggerAttackRelease(note, dur, time, vel);
+            },
+            dispose: () => {
+              synth.dispose();
+              dry.dispose();
+              f1.dispose();
+              f2.dispose();
+              mix.dispose();
+            }
+          };
+        } else {
+          const make = factories[row % factories.length];
+          inst = make ? make() : new Tone.Synth();
+        }
+        if (inst.output) {
+          inst.output.connect(gain);
+        } else {
+          inst.connect(gain);
+        }
         gain.connect(pan);
         rowGains.push(gain);
         rowPanners.push(pan);
@@ -397,6 +469,7 @@
           color: getPrimeColor(row),
           note: getHarmonicNote(row, currentPrime),
           row, col,
+          pitchOffset: 0,
           lastChange: 0,
           lastState: false
         };
@@ -443,9 +516,26 @@
       if (!patternSlots.B) patternSlots.B = getActiveArray();
     }
 
+    let rowOffsets = [];
+    let totalGridHeight = 0;
+
+    function getRowHeight(row) {
+      return cellSize;
+    }
+
+    function computeRowMetrics() {
+      rowOffsets = [];
+      totalGridHeight = 0;
+      for (let row = 0; row < rows; row++) {
+        rowOffsets[row] = totalGridHeight;
+        totalGridHeight += getRowHeight(row);
+      }
+    }
+
     function setCanvasSize() {
+      computeRowMetrics();
       const w = cols * cellSize;
-      const h = rows * cellSize;
+      const h = totalGridHeight;
       canvas.width = w;
       canvas.height = h;
     }
@@ -459,12 +549,12 @@
     function renderRowControls() {
       const container = document.getElementById('rowControls');
       container.innerHTML = '';
-      container.style.height = `${rows * cellSize}px`;
+      container.style.height = `${totalGridHeight}px`;
       const scale = Math.max(0.75, Math.min(1.1, cellSize / 60));
       for (let row = 0; row < rows; row++) {
         const wrap = document.createElement('div');
         wrap.className = 'row-control';
-        wrap.style.height = `${cellSize}px`;
+        wrap.style.height = `${getRowHeight(row)}px`;
         wrap.style.alignItems = 'center';
         
         const label = document.createElement('span');
@@ -513,6 +603,11 @@
         muteBtn.onclick = () => {
           rowMute[row] = !rowMute[row];
           renderRowControls();
+          if (toneReady && rowMute[row] && rowInstruments[row]?.synth && rowGains[row]) {
+            rowInstruments[row].synth.triggerRelease();
+            rowGains[row].gain.value = 0;
+            rowVoiceState[row] = { on: false, freq: 0 };
+          }
           scheduleSave();
         };
         
@@ -525,6 +620,11 @@
         soloBtn.onclick = () => {
           rowSolo[row] = !rowSolo[row];
           renderRowControls();
+          if (toneReady && !rowAudible(row) && rowInstruments[row]?.synth && rowGains[row]) {
+            rowInstruments[row].synth.triggerRelease();
+            rowGains[row].gain.value = 0;
+            rowVoiceState[row] = { on: false, freq: 0 };
+          }
           scheduleSave();
         };
         
@@ -591,6 +691,15 @@
       rowSolo = Array(rows).fill(false).map((_, i) => rowSolo[i] || false);
       rowPanValues = Array(rows).fill(0).map((_, i) => rowPanValues[i] ?? rowPan(i));
       rowGainValues = Array(rows).fill(0.8).map((_, i) => rowGainValues[i] ?? 0.8);
+      rowVoiceState = Array(rows).fill(0).map(() => ({ on: false, freq: 0 }));
+      if (toneReady) {
+        for (let row = 0; row < rows; row++) {
+          if (rowInstruments[row]?.synth && rowGains[row]) {
+            rowInstruments[row].synth.triggerRelease();
+            rowGains[row].gain.value = 0;
+          }
+        }
+      }
       renderRowControls();
       initToneInstruments();
       setActiveArray(patternSlots[currentPattern]);
@@ -624,6 +733,7 @@
     rowSolo = Array(rows).fill(false);
     rowPanValues = Array(rows).fill(0).map((_, i) => rowPan(i));
     rowGainValues = Array(rows).fill(0.8);
+    rowVoiceState = Array(rows).fill(0).map(() => ({ on: false, freq: 0 }));
     renderRowControls();
     document.getElementById('accentSlider').max = String(cols);
     document.getElementById('autoEverySlider').max = String(cols);
@@ -639,7 +749,12 @@
     function rowPan(row) {
       if (rowPanValues[row] !== undefined) return rowPanValues[row];
       if (rows <= 1) return 0;
-      return (row / (rows - 1)) * 2 - 1;
+      const pan = (row / (rows - 1)) * 2 - 1;
+      return Math.max(-0.8, Math.min(0.8, pan));
+    }
+
+    function isVoiceRow(row) {
+      return row >= rows - voiceRows;
     }
 
     
@@ -758,6 +873,41 @@
       if (anySolo) return rowSolo[row];
       return !rowMute[row];
     }
+
+    function getNextVoicePitch(row, col) {
+      for (let offset = 1; offset <= cols; offset++) {
+        const c = (col + offset) % cols;
+        const idx = row * cols + c;
+        if (buttons[idx].active) return buttons[idx].pitchOffset || 0;
+      }
+      return 0;
+    }
+
+    function getVoiceRunInfo(row, col) {
+      let prevDist = null;
+      let nextDist = null;
+      let prevPitch = null;
+      let nextPitch = null;
+      for (let d = 1; d <= cols; d++) {
+        const cPrev = (col - d + cols) % cols;
+        const idxPrev = row * cols + cPrev;
+        if (buttons[idxPrev].active) {
+          prevDist = d;
+          prevPitch = buttons[idxPrev].pitchOffset || 0;
+          break;
+        }
+      }
+      for (let d = 1; d <= cols; d++) {
+        const cNext = (col + d) % cols;
+        const idxNext = row * cols + cNext;
+        if (buttons[idxNext].active) {
+          nextDist = d;
+          nextPitch = buttons[idxNext].pitchOffset || 0;
+          break;
+        }
+      }
+      return { prevDist, nextDist, prevPitch, nextPitch };
+    }
     
     function playNoteFallback(note, velocity, delayMs, detune, row) {
       if (!audioCtx) return;
@@ -810,8 +960,10 @@
             rowGains[row].gain.value = rowGainValues[row] ?? 0.8;
           }
           const freq = Tone.Frequency(note, "midi").toFrequency();
-          inst.triggerAttackRelease(freq, 0.2, now, Math.min(1, velocity));
+          const dur = isVoiceRow(row) ? 0.5 : 0.2;
+          inst.triggerAttackRelease(freq, dur, now, Math.min(1, velocity));
           if (inst.detune) inst.detune.value = detune;
+          if (inst.synth && inst.synth.detune) inst.synth.detune.value = detune;
         } catch (e) {
           console.error('Tone error, falling back:', e);
           playNoteFallback(note, velocity, delayMs, detune, row);
@@ -832,13 +984,13 @@
       ctx.fillRect(0, 0, w, h);
       
       const pad = Math.max(2, Math.floor(cellSize * 0.07));
-      const box = cellSize - pad * 2;
+      const boxW = cellSize - pad * 2;
       
       for (let i = 0; i < buttons.length; i++) {
         const col = i % cols;
         const row = Math.floor(i / cols);
         const x = col * cellSize;
-        const y = row * cellSize;
+        const y = rowOffsets[row];
         
         const isCurrentStep = isPlaying && col === playheadStep;
         
@@ -869,8 +1021,12 @@
             drawOn = true;
           }
         }
-        const size = box * scale;
-        const offset = (box - size) / 2;
+        const sizeW = boxW * scale;
+        const offsetX = (boxW - sizeW) / 2;
+        const isVoice = isVoiceRow(row);
+        const boxH = getRowHeight(row) - pad * 2;
+        const sizeH = boxH * scale;
+        const offsetY = (boxH - sizeH) / 2;
         
         const isPlayheadCell = isPlaying && col === currentStep && isActive;
         const decay = isPlayheadCell ? Math.max(0, 1 - ((nowMs - lastStepMs) / 200)) : 0;
@@ -884,7 +1040,7 @@
           } else {
             const bright = `hsl(${hue}, 70%, ${isPlayheadCell ? 78 + decay * 16 : 58}%)`;
             const dark = `hsl(${hue}, 70%, ${isPlayheadCell ? 40 + decay * 10 : 24}%)`;
-            const grad = ctx.createLinearGradient(x + pad, 0, x + pad + box, 0);
+            const grad = ctx.createLinearGradient(x + pad, 0, x + pad + boxW, 0);
             if (pan < 0) {
               grad.addColorStop(0, bright);
               grad.addColorStop(1, dark);
@@ -897,20 +1053,37 @@
         } else {
           ctx.fillStyle = '#0a0a0a';
         }
-        ctx.fillRect(x + pad + offset, y + pad + offset, size, size);
+        ctx.fillRect(x + pad + offsetX, y + pad + offsetY, sizeW, sizeH);
         
         if (isActive) {
           ctx.shadowBlur = 15;
           ctx.shadowColor = btn.color;
           ctx.fillStyle = btn.color;
-          ctx.fillRect(x + pad + offset, y + pad + offset, size, size);
+          ctx.fillRect(x + pad + offsetX, y + pad + offsetY, sizeW, sizeH);
           ctx.shadowBlur = 0;
+        }
+
+        if (btn.active) {
+          const inset = Math.max(4, Math.floor(cellSize * 0.12));
+          const topY = y + pad;
+          const centerY = topY + boxH / 2;
+          const range = boxH * 0.7;
+          const pitch = btn.pitchOffset || 0;
+          const yOff = (pitch / 24) * range;
+          const lineY = Math.max(topY + 3, Math.min(topY + boxH - 3, centerY - yOff));
+          ctx.strokeStyle = isVoice ? '#8f5bff' : 'rgba(255,255,255,0.9)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(x + inset, lineY);
+          ctx.lineTo(x + cellSize - inset, lineY);
+          ctx.stroke();
         }
         
         ctx.globalAlpha = 1;
-        ctx.strokeStyle = isActive ? '#fff' : (isCurrentStep ? '#333' : '#222');
+        const voiceStroke = isVoice ? '#7b4bff' : null;
+        ctx.strokeStyle = voiceStroke ?? (isActive ? '#fff' : (isCurrentStep ? '#333' : '#222'));
         ctx.lineWidth = isActive ? 2 : 1;
-        ctx.strokeRect(x + pad, y + pad, box, box);
+        ctx.strokeRect(x + pad, y + pad, boxW, boxH);
       }
 
       // Playhead overlay so the column is always visible
@@ -959,6 +1132,7 @@
     // Sequencer step
     function step() {
       const intervalMs = (60 / bpm) * 1000 / 2;
+      const stepMs = intervalMs;
       lastStepMs = performance.now();
       playheadStep = currentStep;
       playheadDelayMs = 0;
@@ -969,7 +1143,57 @@
       for (let row = 0; row < rows; row++) {
         if (!rowAudible(row)) continue;
         const i = row * cols + currentStep;
-        if (buttons[i].active) {
+        if (isVoiceRow(row)) {
+          const now = toneReady ? Tone.now() + Math.max(0, loopReset) / 1000 : audioCtx?.currentTime;
+          const info = getVoiceRunInfo(row, currentStep);
+          const isActive = buttons[i].active;
+          let targetGain = 0;
+          let targetPitch = buttons[i].pitchOffset || 0;
+          
+          if (isActive) {
+            targetGain = 1;
+          } else if (info.prevDist !== null && info.nextDist !== null) {
+            const total = info.prevDist + info.nextDist;
+            const half = total / 2;
+            if (info.prevDist <= half) {
+              targetGain = 1 - (info.prevDist / half);
+              targetPitch = info.prevPitch ?? 0;
+            } else {
+              targetGain = (info.prevDist - half) / half;
+              targetPitch = info.nextPitch ?? 0;
+            }
+          } else {
+            targetGain = 0;
+          }
+          
+          if (toneReady) {
+            const inst = rowInstruments[row];
+            if (inst && inst.synth && rowGains[row]) {
+              const freq = Tone.Frequency(buttons[i].note + targetPitch, "midi").toFrequency();
+              if (inst.f1 && inst.f2) {
+                const v = VOICE_VOWELS[(row + currentStep) % VOICE_VOWELS.length];
+                const scale = Math.max(0.45, Math.min(2.5, freq / 220));
+                inst.f1.frequency.setValueAtTime(v.f1 * scale, now);
+                inst.f2.frequency.setValueAtTime(v.f2 * scale, now);
+              }
+              if (!rowVoiceState[row].on && targetGain > 0.01) {
+                inst.synth.triggerAttack(freq, now);
+                rowVoiceState[row].on = true;
+              }
+              if (rowVoiceState[row].on) {
+                inst.synth.frequency.rampTo(freq, 0.05, now);
+              }
+              rowGains[row].gain.rampTo((rowGainValues[row] ?? 0.8) * targetGain, stepMs / 1000);
+              if (targetGain <= 0.01 && rowVoiceState[row].on && info.nextDist === null) {
+                inst.synth.triggerRelease(now);
+                rowVoiceState[row].on = false;
+              }
+            }
+          } else if (isActive) {
+            const gainScale = velocity;
+            playNote(buttons[i].note + targetPitch, gainScale, loopReset, 0, row);
+          }
+        } else if (buttons[i].active) {
           let delayMs = loopReset;
           let detune = 0;
           let gainScale = velocity;
@@ -978,7 +1202,7 @@
             gainScale *= 1 + (Math.random() * 0.1 - 0.05);
           }
           if (delayMs < 0) delayMs = 0;
-          playNote(buttons[i].note, gainScale, delayMs, detune, row);
+          playNote(buttons[i].note + buttons[i].pitchOffset, gainScale, delayMs, detune, row);
           eventLog.push({ timeMs: playClockMs + delayMs, note: buttons[i].note, velocity: gainScale });
         }
       }
@@ -986,8 +1210,34 @@
       currentStep = (currentStep + 1) % cols;
       if (currentStep === 0) {
         phraseCount += 1;
-        if (autoFractal && phraseCount % autoEvery === 0) {
-          regenerateFractal();
+        if (autoFractal) {
+          const section = songForm[formIndex];
+          if (section) {
+            formPhrase += 1;
+            if (formPhrase === 1) {
+              fractalDensity = section.density;
+              accentEvery = Math.min(cols, section.accent);
+              swingAmount = section.swing;
+              document.getElementById('densitySlider').value = fractalDensity;
+              document.getElementById('densityValue').textContent = fractalDensity;
+              document.getElementById('accentSlider').value = accentEvery;
+              document.getElementById('accentValue').textContent = accentEvery;
+              document.getElementById('swingSlider').value = swingAmount;
+              document.getElementById('swingValue').textContent = swingAmount;
+              // Mute top rows for contrast (bridge = most sparse)
+              const muteHigh = section.muteHigh || 0;
+              rowMute = rowMute.map((_, i) => i >= rows - muteHigh);
+              rowSolo = rowSolo.map(() => false);
+              renderRowControls();
+            }
+            if (formPhrase >= section.phrases) {
+              formPhrase = 0;
+              formIndex = (formIndex + 1) % songForm.length;
+            }
+          }
+          if (phraseCount % autoEvery === 0) {
+            regenerateFractal();
+          }
         }
       }
       playClockMs += intervalMs;
@@ -1015,8 +1265,19 @@
       btn.classList.add('playing');
       currentStep = 0;
       phraseCount = 0;
+      formIndex = 0;
+      formPhrase = 0;
       playClockMs = 0;
       tempoEvents = [{ timeMs: 0, bpm }];
+      rowVoiceState = rowVoiceState.map(() => ({ on: false, freq: 0 }));
+      if (toneReady) {
+        for (let row = 0; row < rows; row++) {
+          if (isVoiceRow(row) && rowInstruments[row]?.synth && rowGains[row]) {
+            rowInstruments[row].synth.triggerRelease();
+            rowGains[row].gain.value = 0;
+          }
+        }
+      }
       if (!buttons.some(b => b.active)) {
         regenerateFractal();
       }
@@ -1032,6 +1293,15 @@
       btn.textContent = 'PLAY';
       btn.classList.remove('playing');
       clearTimeout(intervalId);
+      if (toneReady) {
+        for (let row = 0; row < rows; row++) {
+          const inst = rowInstruments[row];
+          if (inst?.synth) inst.synth.triggerRelease();
+          if (inst?.triggerRelease) inst.triggerRelease();
+          if (rowGains[row]) rowGains[row].gain.value = 0;
+          rowVoiceState[row] = { on: false, freq: 0 };
+        }
+      }
       if (renderRaf) {
         cancelAnimationFrame(renderRaf);
         renderRaf = null;
@@ -1508,7 +1778,10 @@
     };
     
     // Click handler
-    canvas.onclick = (e) => {
+    let dragCell = null;
+    let dragStartY = 0;
+    let dragMoved = false;
+    canvas.onmousedown = (e) => {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
@@ -1527,7 +1800,9 @@
       const i = row * cols + col;
       
       if (row >= 0 && row < rows && col >= 0 && col < cols) {
-        setButtonActive(buttons[i], !buttons[i].active);
+        dragCell = i;
+        dragStartY = e.clientY;
+        dragMoved = false;
         ensurePatternSlots();
         patternSlots[currentPattern] = getActiveArray();
         if (autoFractal) {
@@ -1535,15 +1810,38 @@
           document.getElementById('autoFractalBtn').classList.toggle('active', autoFractal);
         }
         
-        if (buttons[i].active && !isPlaying) {
-          playNote(buttons[i].note, 1, 0, 0, row);
-        }
-        
         render();
         kickAnim();
-        scheduleSave();
       }
     };
+
+    window.addEventListener('mousemove', (e) => {
+      if (dragCell === null) return;
+      const row = Math.floor(dragCell / cols);
+      const dy = dragStartY - e.clientY;
+      if (Math.abs(dy) > 2) dragMoved = true;
+      const semis = Math.max(-24, Math.min(24, Math.round(dy / 6)));
+      buttons[dragCell].pitchOffset = semis;
+      if (!buttons[dragCell].active) {
+        setButtonActive(buttons[dragCell], true);
+      }
+      render();
+      kickAnim();
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (dragCell === null) return;
+      const row = Math.floor(dragCell / cols);
+      if (!dragMoved) {
+        setButtonActive(buttons[dragCell], !buttons[dragCell].active);
+      }
+      if (buttons[dragCell].active && !isPlaying) {
+        playNote(buttons[dragCell].note + buttons[dragCell].pitchOffset, 1, 0, 0, row);
+      }
+      dragCell = null;
+      dragMoved = false;
+      scheduleSave();
+    });
 
     // Drag resize
     const resizeHandle = document.getElementById('resizeHandle');

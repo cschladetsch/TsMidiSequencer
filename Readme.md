@@ -1,6 +1,6 @@
 # Christian's Music Thing
 
-Standalone browser tracker/sequencer with fractal visuals and generative rhythm tools.
+Standalone browser tracker/sequencer with generative rhythm tools and a subtle animated background.
 
 ## Features
 - Clickable grid with resizable rows/columns (drag the corner)
@@ -8,7 +8,9 @@ Standalone browser tracker/sequencer with fractal visuals and generative rhythm 
 - Auto Fractal mode with phrase-based regeneration (per phrase interval)
 - Swing, accent, density, and humanize controls
 - Pattern A/B memory toggle
-- Per-row mute/solo controls
+- Per-row mute/solo controls plus pan + volume sliders
+- Per-note pitch offsets (drag up/down on a block)
+- Voice row (last row) with glide/merge behavior across gaps
 - MIDI export (Compatible or SMPTE time-locked)
 - Runs from a single `index.html` (no build required)
 
@@ -31,4 +33,6 @@ Open `index.html` directly in a modern browser.
 - **HUMANIZE**: Adds subtle timing, detune, and velocity variation.
 - **MIDI MODE**: Toggle between Compatible (PPQ) and SMPTE (time-locked) export.
 - **DOWNLOAD MIDI**: Exports the last N minutes (prompted).
-- **M/S per row**: Mute or Solo each row.
+- **Pitch adjust**: Click-drag up/down on any block to set pitch offset (line marker).
+- **M/S per row**: Mute or Solo each row. Pan and volume sliders are to the left.
+- **Voice row**: The last row uses a formant-style synth that fades to zero between runs and ramps into the next pitch.
