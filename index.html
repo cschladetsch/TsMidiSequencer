@@ -18,6 +18,7 @@
       flex-direction: column;
       align-items: center;
       gap: 15px;
+      overflow: hidden;
     }
     @keyframes bgFloat {
       0% { background-position: 0% 0%, 100% 0%, 50% 100%, 0 0; }
@@ -324,6 +325,7 @@
     let lastStepMs = 0;
     let playheadStep = 0;
     let playheadDelayMs = 0;
+    let renderRaf = null;
     let rowInstruments = [];
     let rowPanners = [];
     function getInstrumentFactories() {
@@ -512,19 +514,20 @@
       if (!wrap) return;
       
       wrap.style.transform = 'scale(1)';
-      wrap.style.width = '';
-      wrap.style.height = '';
       const wrapRect = wrap.getBoundingClientRect();
+      const modeInfo = document.getElementById('modeInfo');
+      const modeRect = modeInfo ? modeInfo.getBoundingClientRect() : { height: 0 };
       const controlsRect = controls.getBoundingClientRect();
-      const padding = 20;
+      const padding = 16;
       const availableWidth = Math.max(200, window.innerWidth - padding * 2);
-      const availableHeight = Math.max(200, window.innerHeight - controlsRect.height - padding * 3);
+      const availableHeight = Math.max(
+        200,
+        window.innerHeight - controlsRect.height - modeRect.height - padding * 3
+      );
       const scaleX = availableWidth / wrapRect.width;
       const scaleY = availableHeight / wrapRect.height;
       const scale = Math.min(scaleX, scaleY);
       wrap.style.transform = `scale(${scale})`;
-      wrap.style.width = `${wrapRect.width * scale}px`;
-      wrap.style.height = `${wrapRect.height * scale}px`;
     }
 
     function resizeGrid(newCols, newRows) {
@@ -880,7 +883,8 @@
         const stepMs = (60 / bpm) * 1000 / 2;
         const elapsed = Math.max(0, nowMs - (lastStepMs + playheadDelayMs));
         const progress = Math.min(1, elapsed / stepMs);
-        const x = ((playheadStep + progress) % cols) * cellSize;
+        const eased = Math.min(1, progress * progress * 1.05);
+        const x = ((playheadStep + eased) % cols) * cellSize;
         ctx.fillStyle = 'rgba(0, 255, 0, 0.08)';
         ctx.fillRect(x, 0, cellSize, canvas.height);
         ctx.strokeStyle = '#fff';
@@ -902,6 +906,19 @@
         }
       };
       animRaf = requestAnimationFrame(tick);
+    }
+
+    function startRenderLoop() {
+      if (renderRaf) return;
+      const loop = () => {
+        render();
+        if (isPlaying) {
+          renderRaf = requestAnimationFrame(loop);
+        } else {
+          renderRaf = null;
+        }
+      };
+      renderRaf = requestAnimationFrame(loop);
     }
     
     // Sequencer step
@@ -970,6 +987,7 @@
       }
       nextStepAt = performance.now();
       scheduleStepLoop();
+      startRenderLoop();
     }
     
     function stopPlayback() {
@@ -979,6 +997,10 @@
       btn.textContent = 'PLAY';
       btn.classList.remove('playing');
       clearTimeout(intervalId);
+      if (renderRaf) {
+        cancelAnimationFrame(renderRaf);
+        renderRaf = null;
+      }
       currentStep = 0;
       render();
     }
