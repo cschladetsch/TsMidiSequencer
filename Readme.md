@@ -36,3 +36,77 @@ Open `index.html` directly in a modern browser.
 - **Pitch adjust**: Click-drag up/down on any block to set pitch offset (line marker).
 - **M/S per row**: Mute or Solo each row. Pan and volume sliders are to the left.
 - **Voice row**: The last row uses a formant-style synth that fades to zero between runs and ramps into the next pitch.
+
+## File Formats
+
+### Pattern File (Load Pattern File)
+Used by the **Load File** button and `patternFileInput`.
+
+**Required fields**
+- `rows`: integer
+- `cols`: integer
+- `pattern`: boolean array of length `rows * cols`
+
+**Optional fields**
+- `settings`: object (see below)
+
+**Ordering**
+- `pattern` is **row-major**: index = `row * cols + col`.
+
+**Example**
+```json
+{
+  "rows": 12,
+  "cols": 24,
+  "pattern": [true, false, false, "..."],
+  "settings": {
+    "bpm": 160,
+    "primeValue": 3,
+    "fractalDepth": 5,
+    "swingAmount": 0,
+    "accentEvery": 4,
+    "autoEvery": 4,
+    "autoFractal": false,
+    "humanizeOn": false,
+    "isLocked": false,
+    "fractalDensity": 60
+  }
+}
+```
+
+### Full State (LocalStorage `cmt_state_v1`)
+This is the complete app state saved to LocalStorage. You can export/import it if you want full restoration.
+
+**Top-level fields**
+- `rows`: integer
+- `cols`: integer
+- `rowMute`: boolean array, length `rows`
+- `rowSolo`: boolean array, length `rows`
+- `rowPanValues`: number array, length `rows` (typically -1..1)
+- `rowGainValues`: number array, length `rows` (typically 0..1)
+- `buttons`: boolean array, length `rows * cols` (same ordering as `pattern`)
+- `currentPattern`: `"A"` or `"B"`
+- `patternSlots`: object with optional `A` and `B` arrays (boolean array length `rows * cols`)
+- `settings`: object (see below)
+
+**`settings` fields**
+- `bpm`: number
+- `primeValue`: number
+- `fractalDepth`: number
+- `swingAmount`: number
+- `accentEvery`: number
+- `autoEvery`: number
+- `autoFractal`: boolean
+- `humanizeOn`: boolean
+- `isLocked`: boolean
+- `fractalDensity`: number
+- `midiMode`: number (index into MIDI mode list)
+
+**Notes**
+- Missing fields fall back to current UI defaults.
+- If `patternSlots` is present, the app will restore the current pattern from it.
+
+### Schemas And Examples
+- JSON Schemas: `schema/pattern.schema.json`, `schema/state.schema.json`
+- Examples: `examples/pattern-example.json`, `examples/state-example.json`
+- Validate: `npm run validate:schema`

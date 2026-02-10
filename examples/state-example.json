@@ -1,0 +1,36 @@
+{
+  "rows": 2,
+  "cols": 4,
+  "rowMute": [false, false],
+  "rowSolo": [false, false],
+  "rowPanValues": [0, 0],
+  "rowGainValues": [0.8, 0.8],
+  "buttons": [
+    true, false, false, true,
+    false, true, false, false
+  ],
+  "currentPattern": "A",
+  "patternSlots": {
+    "A": [
+      true, false, false, true,
+      false, true, false, false
+    ],
+    "B": [
+      false, true, false, false,
+      true, false, true, false
+    ]
+  },
+  "settings": {
+    "bpm": 160,
+    "primeValue": 3,
+    "fractalDepth": 5,
+    "swingAmount": 0,
+    "accentEvery": 4,
+    "autoEvery": 4,
+    "autoFractal": false,
+    "humanizeOn": false,
+    "isLocked": false,
+    "fractalDensity": 60,
+    "midiMode": 0
+  }
+}

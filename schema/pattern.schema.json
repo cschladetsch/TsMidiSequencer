@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/pattern.schema.json",
+  "title": "Pattern File",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rows", "cols", "pattern"],
+  "properties": {
+    "rows": { "type": "integer", "minimum": 1 },
+    "cols": { "type": "integer", "minimum": 1 },
+    "pattern": {
+      "type": "array",
+      "items": { "type": "boolean" },
+      "minItems": 1
+    },
+    "settings": { "$ref": "#/definitions/settings" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "rows": { "type": "integer" },
+          "cols": { "type": "integer" }
+        },
+        "required": ["rows", "cols"]
+      },
+      "then": {
+        "properties": {
+          "pattern": {
+            "type": "array",
+            "items": { "type": "boolean" },
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bpm": { "type": "number" },
+        "primeValue": { "type": "number" },
+        "fractalDepth": { "type": "number" },
+        "swingAmount": { "type": "number" },
+        "accentEvery": { "type": "number" },
+        "autoEvery": { "type": "number" },
+        "autoFractal": { "type": "boolean" },
+        "humanizeOn": { "type": "boolean" },
+        "isLocked": { "type": "boolean" },
+        "fractalDensity": { "type": "number" }
+      }
+    }
+  }
+}

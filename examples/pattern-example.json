@@ -1,0 +1,20 @@
+{
+  "rows": 2,
+  "cols": 4,
+  "pattern": [
+    true, false, false, true,
+    false, true, false, false
+  ],
+  "settings": {
+    "bpm": 160,
+    "primeValue": 3,
+    "fractalDepth": 5,
+    "swingAmount": 0,
+    "accentEvery": 4,
+    "autoEvery": 4,
+    "autoFractal": false,
+    "humanizeOn": false,
+    "isLocked": false,
+    "fractalDensity": 60
+  }
+}

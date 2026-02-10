@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/state.schema.json",
+  "title": "Full App State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rows", "cols"],
+  "properties": {
+    "rows": { "type": "integer", "minimum": 1 },
+    "cols": { "type": "integer", "minimum": 1 },
+    "rowMute": { "type": "array", "items": { "type": "boolean" } },
+    "rowSolo": { "type": "array", "items": { "type": "boolean" } },
+    "rowPanValues": { "type": "array", "items": { "type": "number" } },
+    "rowGainValues": { "type": "array", "items": { "type": "number" } },
+    "buttons": { "type": "array", "items": { "type": "boolean" } },
+    "currentPattern": { "type": "string", "enum": ["A", "B"] },
+    "patternSlots": { "$ref": "#/definitions/patternSlots" },
+    "settings": { "$ref": "#/definitions/settings" }
+  },
+  "definitions": {
+    "patternSlots": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "A": { "type": ["array", "null"], "items": { "type": "boolean" } },
+        "B": { "type": ["array", "null"], "items": { "type": "boolean" } }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bpm": { "type": "number" },
+        "primeValue": { "type": "number" },
+        "fractalDepth": { "type": "number" },
+        "swingAmount": { "type": "number" },
+        "accentEvery": { "type": "number" },
+        "autoEvery": { "type": "number" },
+        "autoFractal": { "type": "boolean" },
+        "humanizeOn": { "type": "boolean" },
+        "isLocked": { "type": "boolean" },
+        "fractalDensity": { "type": "number" },
+        "midiMode": { "type": "number" }
+      }
+    }
+  }
+}

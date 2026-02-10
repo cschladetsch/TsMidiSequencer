@@ -203,6 +203,9 @@
       <button id="midiModeBtn">MIDI MODE: COMPAT</button>
       <button id="savePatternBtn">SAVE PATTERN</button>
       <button id="loadPatternBtn">LOAD PATTERN</button>
+      <button id="loadFileBtn">LOAD FILE</button>
+      <input id="patternFileInput" type="file" accept="application/json" style="display:none">
+      <button id="downloadGaveUpBtn">DOWNLOAD GAVE UP</button>
       <button id="resetViewBtn">RESET VIEW</button>
       <button id="lockBtn">LOCK</button>
       <button id="humanizeBtn">HUMANISE</button>
@@ -1451,6 +1454,52 @@
       scheduleSave();
     };
 
+    function applyPatternPayload(payload) {
+      if (!payload) return;
+      if (payload.rows && payload.cols) {
+        resizeGrid(payload.cols, payload.rows);
+      }
+      if (payload.pattern) {
+        setActiveArray(payload.pattern);
+      }
+      const s = payload.settings || {};
+      bpm = s.bpm ?? bpm;
+      currentPrime = s.primeValue ?? currentPrime;
+      fractalDepth = s.fractalDepth ?? fractalDepth;
+      swingAmount = s.swingAmount ?? swingAmount;
+      accentEvery = s.accentEvery ?? accentEvery;
+      autoEvery = s.autoEvery ?? autoEvery;
+      autoFractal = s.autoFractal ?? autoFractal;
+      humanizeOn = s.humanizeOn ?? humanizeOn;
+      isLocked = s.isLocked ?? isLocked;
+      fractalDensity = s.fractalDensity ?? fractalDensity;
+      
+      document.getElementById('bpmSlider').value = bpm;
+      document.getElementById('bpmValue').textContent = bpm;
+      document.getElementById('primeSlider').value = PRIMES.indexOf(currentPrime);
+      document.getElementById('primeValue').textContent = currentPrime;
+      document.getElementById('depthSlider').value = fractalDepth;
+      document.getElementById('depthValue').textContent = fractalDepth;
+      document.getElementById('swingSlider').value = swingAmount;
+      document.getElementById('swingValue').textContent = swingAmount;
+      document.getElementById('accentSlider').value = accentEvery;
+      document.getElementById('accentValue').textContent = accentEvery;
+      document.getElementById('autoEverySlider').value = autoEvery;
+      document.getElementById('autoEveryValue').textContent = autoEvery;
+      document.getElementById('densitySlider').value = fractalDensity;
+      document.getElementById('densityValue').textContent = fractalDensity;
+      
+      document.getElementById('autoFractalBtn').classList.toggle('active', autoFractal);
+      document.getElementById('humanizeBtn').classList.toggle('active', humanizeOn);
+      document.getElementById('lockBtn').classList.toggle('active', isLocked);
+      document.getElementById('patternBtn').textContent = `PATTERN ${currentPattern}`;
+      
+      updatePrimeHarmonics(currentPrime);
+      render();
+      kickAnim();
+      scheduleSave();
+    }
+
     document.getElementById('loadPatternBtn').onclick = () => {
       const name = prompt("Load pattern name:");
       if (!name) return;
@@ -1458,52 +1507,31 @@
       if (!raw) return;
       try {
         const payload = JSON.parse(raw);
-        if (payload.rows && payload.cols) {
-          resizeGrid(payload.cols, payload.rows);
-        }
-        if (payload.pattern) {
-          setActiveArray(payload.pattern);
-        }
-        const s = payload.settings || {};
-        bpm = s.bpm ?? bpm;
-        currentPrime = s.primeValue ?? currentPrime;
-        fractalDepth = s.fractalDepth ?? fractalDepth;
-        swingAmount = s.swingAmount ?? swingAmount;
-        accentEvery = s.accentEvery ?? accentEvery;
-        autoEvery = s.autoEvery ?? autoEvery;
-        autoFractal = s.autoFractal ?? autoFractal;
-        humanizeOn = s.humanizeOn ?? humanizeOn;
-        isLocked = s.isLocked ?? isLocked;
-        fractalDensity = s.fractalDensity ?? fractalDensity;
-        
-        document.getElementById('bpmSlider').value = bpm;
-        document.getElementById('bpmValue').textContent = bpm;
-        document.getElementById('primeSlider').value = PRIMES.indexOf(currentPrime);
-        document.getElementById('primeValue').textContent = currentPrime;
-        document.getElementById('depthSlider').value = fractalDepth;
-        document.getElementById('depthValue').textContent = fractalDepth;
-        document.getElementById('swingSlider').value = swingAmount;
-        document.getElementById('swingValue').textContent = swingAmount;
-        document.getElementById('accentSlider').value = accentEvery;
-        document.getElementById('accentValue').textContent = accentEvery;
-        document.getElementById('autoEverySlider').value = autoEvery;
-        document.getElementById('autoEveryValue').textContent = autoEvery;
-        document.getElementById('densitySlider').value = fractalDensity;
-        document.getElementById('densityValue').textContent = fractalDensity;
-        
-        document.getElementById('autoFractalBtn').classList.toggle('active', autoFractal);
-        document.getElementById('humanizeBtn').classList.toggle('active', humanizeOn);
-        document.getElementById('lockBtn').classList.toggle('active', isLocked);
-        document.getElementById('patternBtn').textContent = `PATTERN ${currentPattern}`;
-        
-        updatePrimeHarmonics(currentPrime);
-        render();
-        kickAnim();
-        scheduleSave();
+        applyPatternPayload(payload);
       } catch (e) {
         console.warn("Failed to load pattern", e);
       }
     };
+
+    const patternFileInput = document.getElementById('patternFileInput');
+    document.getElementById('loadFileBtn').onclick = () => {
+      patternFileInput.value = '';
+      patternFileInput.click();
+    };
+    patternFileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const payload = JSON.parse(String(reader.result || ''));
+          applyPatternPayload(payload);
+        } catch (err) {
+          console.warn("Failed to load pattern file", err);
+        }
+      };
+      reader.readAsText(file);
+    });
 
     // Reset view
     document.getElementById('resetViewBtn').onclick = () => {
