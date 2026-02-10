@@ -163,6 +163,7 @@
       <button id="autoFractalBtn">AUTO FRACTAL</button>
       <button id="patternBtn">PATTERN A</button>
       <button id="downloadMidiBtn">DOWNLOAD MIDI</button>
+      <button id="midiModeBtn">MIDI MODE: COMPAT</button>
       <button id="resetViewBtn">RESET VIEW</button>
       <button id="lockBtn">LOCK</button>
       <button id="humanizeBtn">HUMANIZE</button>
@@ -202,11 +203,6 @@
       <div class="slider-group">
         <label>Density: <span id="densityValue">60</span></label>
         <input type="range" id="densitySlider" min="10" max="100" value="60" step="1">
-      </div>
-
-      <div class="slider-group">
-        <label>Midi Mode: <span id="midiModeValue">COMPAT</span></label>
-        <input type="range" id="midiModeSlider" min="0" max="1" value="0" step="1">
       </div>
     </div>
   </div>
@@ -274,11 +270,12 @@
     let playClockMs = 0;
     const eventLog = [];
     const maxLogMs = 5 * 60 * 1000;
-    const introPhrases = 4;
     let tempoEvents = [{ timeMs: 0, bpm: 120 }];
     let currentPattern = 'A';
     let patternSlots = { A: null, B: null };
     let saveTimer = null;
+    let animRaf = null;
+    let animUntil = 0;
     
     // Initialize audio immediately
     window.addEventListener('click', () => {
@@ -305,7 +302,9 @@
           active: false,
           color: getPrimeColor(row),
           note: getHarmonicNote(row, currentPrime),
-          row, col
+          row, col,
+          lastChange: 0,
+          lastState: false
         };
       });
       
@@ -319,7 +318,11 @@
     function setActiveArray(arr) {
       if (!arr || arr.length !== buttons.length) return;
       for (let i = 0; i < buttons.length; i++) {
-        buttons[i].active = !!arr[i];
+        const next = !!arr[i];
+        if (buttons[i].active !== next) {
+          buttons[i].active = next;
+          buttons[i].lastChange = performance.now();
+        }
       }
     }
 
@@ -383,6 +386,7 @@
         muteBtn.onclick = () => {
           rowMute[row] = !rowMute[row];
           renderRowControls();
+          scheduleSave();
         };
         
         const soloBtn = document.createElement('button');
@@ -394,6 +398,7 @@
         soloBtn.onclick = () => {
           rowSolo[row] = !rowSolo[row];
           renderRowControls();
+          scheduleSave();
         };
         
         wrap.appendChild(label);
@@ -581,7 +586,10 @@
         const base = euclideanRhythm(cols, pulses);
         const rot = (seedBits + btn.row * 3) % cols;
         const pattern = rotatePattern(base, rot);
-        btn.active = pattern[btn.col];
+        if (btn.active !== pattern[btn.col]) {
+          btn.active = pattern[btn.col];
+          btn.lastChange = performance.now();
+        }
       });
       
       render();
@@ -600,7 +608,11 @@
         const gate = ((r + c + primeOffset) % 5) >= densityGate;
         const hash = (r * 37 + c * 17 + seedBits) % 100;
         const densityOK = hash < fractalDensity;
-        btn.active = sierp && gate && densityOK;
+        const next = sierp && gate && densityOK;
+        if (btn.active !== next) {
+          btn.active = next;
+          btn.lastChange = performance.now();
+        }
       });
       
       render();
@@ -664,6 +676,7 @@
     
     // Render grid
     function render() {
+      const nowMs = performance.now();
       const w = canvas.width;
       const h = canvas.height;
       ctx.clearRect(0, 0, w, h);
@@ -687,19 +700,31 @@
           ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
         }
         
-        ctx.fillStyle = buttons[i].active ? buttons[i].color : '#0a0a0a';
-        ctx.fillRect(x + pad, y + pad, box, box);
+        const btn = buttons[i];
+        const isActive = btn.active;
+        const animT = Math.min(1, (nowMs - btn.lastChange) / 140);
+        const animEase = animT * (2 - animT); // ease out
+        const pulse = (1 - animEase) * 0.18;
+        const scale = 1 + (isActive ? pulse : -pulse);
+        const alpha = isActive ? 1 : 0.9 - pulse;
+        const size = box * scale;
+        const offset = (box - size) / 2;
         
-        if (buttons[i].active) {
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = isActive ? btn.color : '#0a0a0a';
+        ctx.fillRect(x + pad + offset, y + pad + offset, size, size);
+        
+        if (isActive) {
           ctx.shadowBlur = 15;
-          ctx.shadowColor = buttons[i].color;
-          ctx.fillStyle = buttons[i].color;
-          ctx.fillRect(x + pad, y + pad, box, box);
+          ctx.shadowColor = btn.color;
+          ctx.fillStyle = btn.color;
+          ctx.fillRect(x + pad + offset, y + pad + offset, size, size);
           ctx.shadowBlur = 0;
         }
         
-        ctx.strokeStyle = buttons[i].active ? '#fff' : (isCurrentStep ? '#333' : '#222');
-        ctx.lineWidth = buttons[i].active ? 2 : 1;
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = isActive ? '#fff' : (isCurrentStep ? '#333' : '#222');
+        ctx.lineWidth = isActive ? 2 : 1;
         ctx.strokeRect(x + pad, y + pad, box, box);
       }
 
@@ -712,6 +737,21 @@
         ctx.lineWidth = 2;
         ctx.strokeRect(x + 1, 1, cellSize - 2, canvas.height - 2);
       }
+    }
+
+    function kickAnim(ms = 180) {
+      const now = performance.now();
+      animUntil = Math.max(animUntil, now + ms);
+      if (animRaf) return;
+      const tick = () => {
+        render();
+        if (performance.now() < animUntil) {
+          animRaf = requestAnimationFrame(tick);
+        } else {
+          animRaf = null;
+        }
+      };
+      animRaf = requestAnimationFrame(tick);
     }
     
     // Sequencer step
@@ -835,12 +875,12 @@
       scheduleSave();
     };
 
-    // MIDI mode control
+    // MIDI mode toggle
     const midiModes = ['COMPAT', 'SMPTE'];
     let midiMode = 0;
-    document.getElementById('midiModeSlider').oninput = (e) => {
-      midiMode = parseInt(e.target.value);
-      document.getElementById('midiModeValue').textContent = midiModes[midiMode];
+    document.getElementById('midiModeBtn').onclick = () => {
+      midiMode = midiMode === 0 ? 1 : 0;
+      document.getElementById('midiModeBtn').textContent = `MIDI MODE: ${midiModes[midiMode]}`;
       scheduleSave();
     };
     
@@ -988,8 +1028,7 @@
         document.getElementById('autoEveryValue').textContent = autoEvery;
         document.getElementById('densitySlider').value = fractalDensity;
         document.getElementById('densityValue').textContent = fractalDensity;
-        document.getElementById('midiModeSlider').value = midiMode;
-        document.getElementById('midiModeValue').textContent = midiModes[midiMode];
+        document.getElementById('midiModeBtn').textContent = `MIDI MODE: ${midiModes[midiMode]}`;
         
         document.getElementById('autoFractalBtn').classList.toggle('active', autoFractal);
         document.getElementById('humanizeBtn').classList.toggle('active', humanizeOn);
@@ -1178,12 +1217,15 @@
       
       if (row >= 0 && row < rows && col >= 0 && col < cols) {
         buttons[i].active = !buttons[i].active;
+        buttons[i].lastChange = performance.now();
+        buttons[i].lastState = buttons[i].active;
         
         if (buttons[i].active && !isPlaying) {
           playNote(buttons[i].note);
         }
         
         render();
+        kickAnim();
         scheduleSave();
       }
     };
@@ -1227,23 +1269,35 @@
     
     // Clear
     document.getElementById('clearBtn').onclick = () => {
-      buttons.forEach(btn => btn.active = false);
+      buttons.forEach(btn => {
+        if (btn.active) {
+          btn.active = false;
+          btn.lastChange = performance.now();
+        }
+      });
       render();
+      kickAnim();
       scheduleSave();
     };
     
     // Random
     document.getElementById('randomBtn').onclick = () => {
       buttons.forEach(btn => {
-        btn.active = Math.random() > 0.7;
+        const next = Math.random() > 0.7;
+        if (btn.active !== next) {
+          btn.active = next;
+          btn.lastChange = performance.now();
+        }
       });
       render();
+      kickAnim();
       scheduleSave();
     };
     
     // Euclidean
     document.getElementById('euclidBtn').onclick = () => {
       generateEuclideanPatternWithSeed();
+      kickAnim();
       scheduleSave();
     };
     
@@ -1251,6 +1305,7 @@
     document.getElementById('fractalBtn').onclick = () => {
       regenerateFractal();
       phraseCount = 0;
+      kickAnim();
       scheduleSave();
     };
     
@@ -1264,10 +1319,7 @@
     document.getElementById('patternBtn').textContent = `PATTERN ${currentPattern}`;
     updateSizeBadge();
     loadState();
-    if (autoStart) {
-      document.getElementById('playBtn').textContent = 'STOP';
-      document.getElementById('playBtn').classList.add('playing');
-    }
+    // Keep PLAY until audio actually starts on user gesture.
   </script>
 </body>
 </html>

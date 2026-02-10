@@ -5,9 +5,11 @@ Standalone browser tracker/sequencer with fractal visuals and generative rhythm 
 ## Features
 - Clickable grid with resizable rows/columns (drag the corner)
 - Fractal and Euclidean pattern generators
-- Auto Fractal mode with phrase-based regeneration
-- Swing, accent, and humanize controls
+- Auto Fractal mode with phrase-based regeneration (per phrase interval)
+- Swing, accent, density, and humanize controls
+- Pattern A/B memory toggle
 - Per-row mute/solo controls
+- MIDI export (Compatible or SMPTE time-locked)
 - Runs from a single `index.html` (no build required)
 
 ## Quick Start (No Build)
@@ -15,3 +17,14 @@ Standalone browser tracker/sequencer with fractal visuals and generative rhythm 
 Open `index.html` directly in a modern browser.
 
 **Tip:** If audio doesn't start automatically, click anywhere in the page to unlock audio playback.
+
+## Controls Overview
+- **PLAY**: Start/stop playback.
+- **CLEAR / RANDOM**: Reset or randomize the grid.
+- **EUCLIDEAN**: Generates evenly-distributed rhythms (tied to current seed).
+- **FRACTAL / AUTO FRACTAL**: Generate and optionally auto-regenerate fractal patterns per phrase.
+- **PATTERN A/B**: Toggle between two stored patterns.
+- **HUMANIZE**: Adds subtle timing, detune, and velocity variation.
+- **MIDI MODE**: Toggle between Compatible (PPQ) and SMPTE (time-locked) export.
+- **DOWNLOAD MIDI**: Exports the last N minutes (prompted).
+- **M/S per row**: Mute or Solo each row.
