@@ -103,6 +103,20 @@
       position: relative;
       display: inline-block;
     }
+    .size-badge {
+      position: absolute;
+      right: 6px;
+      bottom: 6px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #0f0;
+      font-size: 10px;
+      padding: 4px 6px;
+      border: 1px solid #0f0;
+      border-radius: 3px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
     .canvas-wrap {
       display: flex;
       align-items: center;
@@ -147,7 +161,9 @@
       <button id="euclidBtn">EUCLIDEAN</button>
       <button id="fractalBtn">FRACTAL</button>
       <button id="autoFractalBtn">AUTO FRACTAL</button>
+      <button id="patternBtn">PATTERN A</button>
       <button id="downloadMidiBtn">DOWNLOAD MIDI</button>
+      <button id="resetViewBtn">RESET VIEW</button>
       <button id="lockBtn">LOCK</button>
       <button id="humanizeBtn">HUMANIZE</button>
     </div>
@@ -182,6 +198,16 @@
         <label>Auto Every: <span id="autoEveryValue">4</span></label>
         <input type="range" id="autoEverySlider" min="1" max="8" value="4" step="1">
       </div>
+
+      <div class="slider-group">
+        <label>Density: <span id="densityValue">60</span></label>
+        <input type="range" id="densitySlider" min="10" max="100" value="60" step="1">
+      </div>
+
+      <div class="slider-group">
+        <label>Midi Mode: <span id="midiModeValue">COMPAT</span></label>
+        <input type="range" id="midiModeSlider" min="0" max="1" value="0" step="1">
+      </div>
     </div>
   </div>
   
@@ -195,6 +221,7 @@
       <canvas id="fractalBg" width="480" height="480"></canvas>
       <canvas id="grid" width="480" height="480"></canvas>
       <div id="resizeHandle" class="resize-handle" title="Drag to resize"></div>
+      <div id="sizeBadge" class="size-badge">12×24</div>
     </div>
   </div>
   
@@ -240,14 +267,18 @@
     let accentEvery = 4;
     let autoFractal = true;
     let autoEvery = 4;
+    let fractalDensity = 60;
     let phraseCount = 0;
     let autoStart = true;
     let autoStartTriggered = false;
     let playClockMs = 0;
     const eventLog = [];
     const maxLogMs = 5 * 60 * 1000;
-    let tempoEvents = [{ timeMs: 0, bpm: 120 }];
     const introPhrases = 4;
+    let tempoEvents = [{ timeMs: 0, bpm: 120 }];
+    let currentPattern = 'A';
+    let patternSlots = { A: null, B: null };
+    let saveTimer = null;
     
     // Initialize audio immediately
     window.addEventListener('click', () => {
@@ -281,6 +312,36 @@
       return btns;
     }
 
+    function getActiveArray() {
+      return buttons.map(b => !!b.active);
+    }
+
+    function setActiveArray(arr) {
+      if (!arr || arr.length !== buttons.length) return;
+      for (let i = 0; i < buttons.length; i++) {
+        buttons[i].active = !!arr[i];
+      }
+    }
+
+    function resizePattern(oldPattern, oldCols, oldRows, newCols, newRows) {
+      const out = Array(newCols * newRows).fill(false);
+      const minRows = Math.min(oldRows, newRows);
+      const minCols = Math.min(oldCols, newCols);
+      for (let r = 0; r < minRows; r++) {
+        for (let c = 0; c < minCols; c++) {
+          const oldIdx = r * oldCols + c;
+          const newIdx = r * newCols + c;
+          out[newIdx] = !!oldPattern[oldIdx];
+        }
+      }
+      return out;
+    }
+
+    function ensurePatternSlots() {
+      if (!patternSlots.A) patternSlots.A = getActiveArray();
+      if (!patternSlots.B) patternSlots.B = getActiveArray();
+    }
+
     function setCanvasSize() {
       const w = cols * cellSize;
       const h = rows * cellSize;
@@ -288,6 +349,12 @@
       canvas.height = h;
       fractalCanvas.width = w;
       fractalCanvas.height = h;
+    }
+
+    function updateSizeBadge(show = false) {
+      const badge = document.getElementById('sizeBadge');
+      badge.textContent = `${rows}×${cols}`;
+      if (show) badge.style.opacity = '1';
     }
 
     function renderRowControls() {
@@ -337,13 +404,16 @@
     }
 
     function resizeGrid(newCols, newRows) {
-      newCols = Math.max(4, Math.min(16, newCols));
-      newRows = Math.max(4, Math.min(16, newRows));
+      newCols = Math.max(4, newCols);
+      newRows = Math.max(4, newRows);
       if (newCols === cols && newRows === rows) return;
       
       const oldButtons = buttons;
       const oldCols = cols;
       const oldRows = rows;
+      ensurePatternSlots();
+      patternSlots.A = resizePattern(patternSlots.A, oldCols, oldRows, newCols, newRows);
+      patternSlots.B = resizePattern(patternSlots.B, oldCols, oldRows, newCols, newRows);
       
       cols = newCols;
       rows = newRows;
@@ -363,6 +433,7 @@
       rowMute = Array(rows).fill(false).map((_, i) => rowMute[i] || false);
       rowSolo = Array(rows).fill(false).map((_, i) => rowSolo[i] || false);
       renderRowControls();
+      setActiveArray(patternSlots[currentPattern]);
       
       const accentSlider = document.getElementById('accentSlider');
       accentSlider.max = String(cols);
@@ -381,8 +452,10 @@
       }
       
       currentStep = 0;
+      updateSizeBadge();
       drawFractal();
       render();
+      scheduleSave();
     }
 
     setCanvasSize();
@@ -525,7 +598,9 @@
         const c = (btn.col + (seedBits >> btn.row)) % cols;
         const sierp = ((r & c) === 0);
         const gate = ((r + c + primeOffset) % 5) >= densityGate;
-        btn.active = sierp && gate;
+        const hash = (r * 37 + c * 17 + seedBits) % 100;
+        const densityOK = hash < fractalDensity;
+        btn.active = sierp && gate && densityOK;
       });
       
       render();
@@ -742,12 +817,31 @@
     document.getElementById('accentSlider').oninput = (e) => {
       accentEvery = parseInt(e.target.value);
       document.getElementById('accentValue').textContent = accentEvery;
+      scheduleSave();
     };
 
     // Auto fractal interval
     document.getElementById('autoEverySlider').oninput = (e) => {
       autoEvery = parseInt(e.target.value);
       document.getElementById('autoEveryValue').textContent = autoEvery;
+      scheduleSave();
+    };
+
+    // Density control
+    document.getElementById('densitySlider').oninput = (e) => {
+      fractalDensity = parseInt(e.target.value);
+      document.getElementById('densityValue').textContent = fractalDensity;
+      generateFractalPattern();
+      scheduleSave();
+    };
+
+    // MIDI mode control
+    const midiModes = ['COMPAT', 'SMPTE'];
+    let midiMode = 0;
+    document.getElementById('midiModeSlider').oninput = (e) => {
+      midiMode = parseInt(e.target.value);
+      document.getElementById('midiModeValue').textContent = midiModes[midiMode];
+      scheduleSave();
     };
     
     // Prime selector
@@ -756,6 +850,7 @@
       const prime = PRIMES[idx];
       document.getElementById('primeValue').textContent = prime;
       updatePrimeHarmonics(prime);
+      scheduleSave();
     };
     
     // Fractal depth
@@ -763,25 +858,153 @@
       fractalDepth = parseInt(e.target.value);
       document.getElementById('depthValue').textContent = fractalDepth;
       drawFractal();
+      scheduleSave();
     };
 
     // Lock toggle
     document.getElementById('lockBtn').onclick = () => {
       isLocked = !isLocked;
       document.getElementById('lockBtn').classList.toggle('active', isLocked);
+      scheduleSave();
     };
 
     // Humanize toggle
     document.getElementById('humanizeBtn').onclick = () => {
       humanizeOn = !humanizeOn;
       document.getElementById('humanizeBtn').classList.toggle('active', humanizeOn);
+      scheduleSave();
     };
 
     // Auto fractal toggle
     document.getElementById('autoFractalBtn').onclick = () => {
       autoFractal = !autoFractal;
       document.getElementById('autoFractalBtn').classList.toggle('active', autoFractal);
+      scheduleSave();
     };
+
+    // Pattern toggle
+    document.getElementById('patternBtn').onclick = () => {
+      ensurePatternSlots();
+      patternSlots[currentPattern] = getActiveArray();
+      currentPattern = currentPattern === 'A' ? 'B' : 'A';
+      setActiveArray(patternSlots[currentPattern]);
+      document.getElementById('patternBtn').textContent = `PATTERN ${currentPattern}`;
+      render();
+      scheduleSave();
+    };
+
+    // Reset view
+    document.getElementById('resetViewBtn').onclick = () => {
+      resizeGrid(24, 12);
+      scheduleSave();
+    };
+
+    function scheduleSave() {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveState, 200);
+    }
+    
+    function saveState() {
+      try {
+        ensurePatternSlots();
+        patternSlots[currentPattern] = getActiveArray();
+        const state = {
+          rows,
+          cols,
+          rowMute,
+          rowSolo,
+          buttons: getActiveArray(),
+          currentPattern,
+          patternSlots,
+          settings: {
+            bpm,
+            primeValue: currentPrime,
+            fractalDepth,
+            swingAmount,
+            accentEvery,
+            autoEvery,
+            autoFractal,
+            humanizeOn,
+            isLocked,
+            fractalDensity,
+            midiMode
+          }
+        };
+        localStorage.setItem('cmt_state_v1', JSON.stringify(state));
+      } catch (e) {
+        console.warn('State save failed', e);
+      }
+    }
+    
+    function loadState() {
+      try {
+        const raw = localStorage.getItem('cmt_state_v1');
+        if (!raw) return false;
+        const state = JSON.parse(raw);
+        if (!state || !state.rows || !state.cols) return false;
+        
+        resizeGrid(state.cols, state.rows);
+        rowMute = Array(rows).fill(false).map((_, i) => state.rowMute?.[i] || false);
+        rowSolo = Array(rows).fill(false).map((_, i) => state.rowSolo?.[i] || false);
+        renderRowControls();
+        
+        if (state.patternSlots) {
+          patternSlots = {
+            A: state.patternSlots.A ? resizePattern(state.patternSlots.A, state.cols, state.rows, cols, rows) : null,
+            B: state.patternSlots.B ? resizePattern(state.patternSlots.B, state.cols, state.rows, cols, rows) : null
+          };
+        }
+        currentPattern = state.currentPattern || 'A';
+        if (patternSlots[currentPattern]) {
+          setActiveArray(patternSlots[currentPattern]);
+        } else if (state.buttons) {
+          setActiveArray(state.buttons);
+        }
+        
+        const s = state.settings || {};
+        bpm = s.bpm ?? bpm;
+        currentPrime = s.primeValue ?? currentPrime;
+        fractalDepth = s.fractalDepth ?? fractalDepth;
+        swingAmount = s.swingAmount ?? swingAmount;
+        accentEvery = s.accentEvery ?? accentEvery;
+        autoEvery = s.autoEvery ?? autoEvery;
+        autoFractal = s.autoFractal ?? autoFractal;
+        humanizeOn = s.humanizeOn ?? humanizeOn;
+        isLocked = s.isLocked ?? isLocked;
+        fractalDensity = s.fractalDensity ?? fractalDensity;
+        midiMode = s.midiMode ?? midiMode;
+        
+        document.getElementById('bpmSlider').value = bpm;
+        document.getElementById('bpmValue').textContent = bpm;
+        document.getElementById('primeSlider').value = PRIMES.indexOf(currentPrime);
+        document.getElementById('primeValue').textContent = currentPrime;
+        document.getElementById('depthSlider').value = fractalDepth;
+        document.getElementById('depthValue').textContent = fractalDepth;
+        document.getElementById('swingSlider').value = swingAmount;
+        document.getElementById('swingValue').textContent = swingAmount;
+        document.getElementById('accentSlider').value = accentEvery;
+        document.getElementById('accentValue').textContent = accentEvery;
+        document.getElementById('autoEverySlider').value = autoEvery;
+        document.getElementById('autoEveryValue').textContent = autoEvery;
+        document.getElementById('densitySlider').value = fractalDensity;
+        document.getElementById('densityValue').textContent = fractalDensity;
+        document.getElementById('midiModeSlider').value = midiMode;
+        document.getElementById('midiModeValue').textContent = midiModes[midiMode];
+        
+        document.getElementById('autoFractalBtn').classList.toggle('active', autoFractal);
+        document.getElementById('humanizeBtn').classList.toggle('active', humanizeOn);
+        document.getElementById('lockBtn').classList.toggle('active', isLocked);
+        document.getElementById('patternBtn').textContent = `PATTERN ${currentPattern}`;
+        
+        updatePrimeHarmonics(currentPrime);
+        updateSizeBadge();
+        render();
+        return true;
+      } catch (e) {
+        console.warn('State load failed', e);
+        return false;
+      }
+    }
 
     function writeVlq(value) {
       const bytes = [];
@@ -798,30 +1021,66 @@
       return bytes;
     }
     
-    function buildMidiFile(exportMinutes) {
-      const ticksPerBeat = 480;
+    function buildMidiFile(exportMinutes, mode) {
       const endTime = isPlaying ? playClockMs : (eventLog.length ? eventLog[eventLog.length - 1].timeMs : 0);
       const startTime = Math.max(0, endTime - exportMinutes * 60 * 1000);
-      
-      const map = buildTempoMap(startTime, endTime);
-      
-      const events = eventLog
-        .filter(e => e.timeMs >= startTime && e.timeMs <= endTime)
-        .map(e => ({
-          tick: Math.max(0, msToTicks(e.timeMs, map)),
-          note: e.note,
-          velocity: Math.max(1, Math.min(127, Math.round(e.velocity * 96)))
-        }));
-      const noteTicks = 120;
-      
       const trackEvents = [];
-      for (const t of map) {
-        trackEvents.push({ tick: msToTicks(t.timeMs, map), data: [0xFF, 0x51, 0x03, ...tempoBytes(t.bpm)] });
-      }
+      let header;
       
-      for (const ev of events) {
-        trackEvents.push({ tick: ev.tick, data: [0x90, ev.note & 0x7F, ev.velocity] });
-        trackEvents.push({ tick: ev.tick + noteTicks, data: [0x80, ev.note & 0x7F, 0x00] });
+      if (mode === 'smpte') {
+        const SMPTE_FPS = 30;
+        const TICKS_PER_FRAME = 80;
+        const TICKS_PER_SEC = SMPTE_FPS * TICKS_PER_FRAME;
+        const ticksPerMs = TICKS_PER_SEC / 1000;
+        
+        const events = eventLog
+          .filter(e => e.timeMs >= startTime && e.timeMs <= endTime)
+          .map(e => ({
+            tick: Math.max(0, Math.round((e.timeMs - startTime) * ticksPerMs)),
+            note: e.note,
+            velocity: Math.max(1, Math.min(127, Math.round(e.velocity * 96)))
+          }));
+        const noteTicks = Math.max(1, Math.round(120 * ticksPerMs));
+        
+        for (const ev of events) {
+          trackEvents.push({ tick: ev.tick, data: [0x90, ev.note & 0x7F, ev.velocity] });
+          trackEvents.push({ tick: ev.tick + noteTicks, data: [0x80, ev.note & 0x7F, 0x00] });
+        }
+        
+        header = [
+          ...strBytes('MThd'),
+          0x00, 0x00, 0x00, 0x06,
+          0x00, 0x00,
+          0x00, 0x01,
+          0xE2, TICKS_PER_FRAME & 0xFF
+        ];
+      } else {
+        const TICKS_PER_BEAT = 480;
+        const map = buildTempoMap(startTime, endTime);
+        const events = eventLog
+          .filter(e => e.timeMs >= startTime && e.timeMs <= endTime)
+          .map(e => ({
+            tick: Math.max(0, msToTicks(e.timeMs, map, TICKS_PER_BEAT)),
+            note: e.note,
+            velocity: Math.max(1, Math.min(127, Math.round(e.velocity * 96)))
+          }));
+        const noteTicks = 120;
+        
+        for (const t of map) {
+          trackEvents.push({ tick: msToTicks(t.timeMs, map, TICKS_PER_BEAT), data: [0xFF, 0x51, 0x03, ...tempoBytes(t.bpm)] });
+        }
+        for (const ev of events) {
+          trackEvents.push({ tick: ev.tick, data: [0x90, ev.note & 0x7F, ev.velocity] });
+          trackEvents.push({ tick: ev.tick + noteTicks, data: [0x80, ev.note & 0x7F, 0x00] });
+        }
+        
+        header = [
+          ...strBytes('MThd'),
+          0x00, 0x00, 0x00, 0x06,
+          0x00, 0x00,
+          0x00, 0x01,
+          (TICKS_PER_BEAT >> 8) & 0xFF, TICKS_PER_BEAT & 0xFF
+        ];
       }
       
       trackEvents.sort((a, b) => a.tick - b.tick);
@@ -835,20 +1094,21 @@
       }
       trackData.push(0x00, 0xFF, 0x2F, 0x00);
       
-      const header = [
-        ...strBytes('MThd'),
-        0x00, 0x00, 0x00, 0x06,
-        0x00, 0x00,
-        0x00, 0x01,
-        (ticksPerBeat >> 8) & 0xFF, ticksPerBeat & 0xFF
-      ];
-      
       const trackHeader = [
         ...strBytes('MTrk'),
         ...u32Bytes(trackData.length)
       ];
       
       return new Uint8Array([...header, ...trackHeader, ...trackData]);
+    }
+    
+    
+    function u32Bytes(n) {
+      return [(n >> 24) & 0xFF, (n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF];
+    }
+    
+    function strBytes(str) {
+      return Array.from(str).map(ch => ch.charCodeAt(0));
     }
     
     function tempoBytes(bpmVal) {
@@ -870,7 +1130,7 @@
       return map;
     }
 
-    function msToTicks(timeMs, map) {
+    function msToTicks(timeMs, map, ticksPerBeat) {
       let ticks = 0;
       for (let i = 0; i < map.length; i++) {
         const segStart = map[i].timeMs;
@@ -884,20 +1144,13 @@
       }
       return Math.round(ticks);
     }
-    
-    function u32Bytes(n) {
-      return [(n >> 24) & 0xFF, (n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF];
-    }
-    
-    function strBytes(str) {
-      return Array.from(str).map(ch => ch.charCodeAt(0));
-    }
-    
+
     document.getElementById('downloadMidiBtn').onclick = () => {
       const input = prompt('MIDI length in minutes (1-60):', '5');
       if (input === null) return;
       const minutes = Math.max(1, Math.min(60, parseInt(input, 10) || 5));
-      const data = buildMidiFile(minutes);
+      const mode = midiMode === 1 ? 'smpte' : 'ppq';
+      const data = buildMidiFile(minutes, mode);
       const blob = new Blob([data], { type: 'audio/midi' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -931,6 +1184,7 @@
         }
         
         render();
+        scheduleSave();
       }
     };
 
@@ -949,6 +1203,8 @@
       startCols = cols;
       startRows = rows;
       document.body.style.cursor = 'nwse-resize';
+      updateSizeBadge(true);
+      document.getElementById('sizeBadge').style.opacity = '1';
       e.preventDefault();
     };
     
@@ -959,18 +1215,21 @@
       const newCols = startCols + Math.round(dx / cellSize);
       const newRows = startRows + Math.round(dy / cellSize);
       resizeGrid(newCols, newRows);
+      updateSizeBadge(true);
     });
     
     window.addEventListener('mouseup', () => {
       if (!resizing) return;
       resizing = false;
       document.body.style.cursor = '';
+      document.getElementById('sizeBadge').style.opacity = '0';
     });
     
     // Clear
     document.getElementById('clearBtn').onclick = () => {
       buttons.forEach(btn => btn.active = false);
       render();
+      scheduleSave();
     };
     
     // Random
@@ -979,17 +1238,20 @@
         btn.active = Math.random() > 0.7;
       });
       render();
+      scheduleSave();
     };
     
     // Euclidean
     document.getElementById('euclidBtn').onclick = () => {
       generateEuclideanPatternWithSeed();
+      scheduleSave();
     };
     
     // Regenerate fractal
     document.getElementById('fractalBtn').onclick = () => {
       regenerateFractal();
       phraseCount = 0;
+      scheduleSave();
     };
     
     // Initial render
@@ -999,6 +1261,9 @@
     // Default states
     document.getElementById('autoFractalBtn').classList.add('active');
     document.getElementById('humanizeBtn').classList.add('active');
+    document.getElementById('patternBtn').textContent = `PATTERN ${currentPattern}`;
+    updateSizeBadge();
+    loadState();
     if (autoStart) {
       document.getElementById('playBtn').textContent = 'STOP';
       document.getElementById('playBtn').classList.add('playing');
