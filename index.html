@@ -159,6 +159,11 @@
       gap: 4px;
       align-items: center;
     }
+    .row-sliders {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
     .row-control button {
       min-width: 34px;
       padding: 6px 6px;
@@ -300,6 +305,7 @@
     let rowMute = [];
     let rowSolo = [];
     let rowPanValues = [];
+    let rowGainValues = [];
     let toneReady = false;
     let audioCtx = null;
     let fractalSeed = Math.random();
@@ -328,6 +334,7 @@
     let renderRaf = null;
     let rowInstruments = [];
     let rowPanners = [];
+    let rowGains = [];
     function getInstrumentFactories() {
       return [
         () => new Tone.MembraneSynth(),
@@ -351,14 +358,19 @@
     function initToneInstruments() {
       rowInstruments.forEach(inst => inst.dispose && inst.dispose());
       rowPanners.forEach(p => p.dispose && p.dispose());
+      rowGains.forEach(g => g.dispose && g.dispose());
       rowInstruments = [];
       rowPanners = [];
+      rowGains = [];
       const factories = getInstrumentFactories();
       for (let row = 0; row < rows; row++) {
+        const gain = new Tone.Gain(rowGainValues[row] ?? 0.8);
         const pan = new Tone.Panner(rowPan(row)).toDestination();
         const make = factories[row % factories.length];
         const inst = make ? make() : new Tone.Synth();
-        inst.connect(pan);
+        inst.connect(gain);
+        gain.connect(pan);
+        rowGains.push(gain);
         rowPanners.push(pan);
         rowInstruments.push(inst);
       }
@@ -473,6 +485,24 @@
           if (rowPanners[row]) rowPanners[row].pan.value = rowPanValues[row];
           scheduleSave();
         };
+
+        const vol = document.createElement('input');
+        vol.type = 'range';
+        vol.min = '0';
+        vol.max = '1';
+        vol.step = '0.01';
+        vol.value = (rowGainValues[row] ?? 0.8).toFixed(2);
+        vol.style.width = `${Math.round(60 * scale)}px`;
+        vol.oninput = (e) => {
+          rowGainValues[row] = parseFloat(e.target.value);
+          if (rowGains[row]) rowGains[row].gain.value = rowGainValues[row];
+          scheduleSave();
+        };
+
+        const sliders = document.createElement('div');
+        sliders.className = 'row-sliders';
+        sliders.appendChild(pan);
+        sliders.appendChild(vol);
         
         const muteBtn = document.createElement('button');
         muteBtn.textContent = 'M';
@@ -499,7 +529,7 @@
         };
         
         wrap.appendChild(label);
-        wrap.appendChild(pan);
+        wrap.appendChild(sliders);
         wrap.appendChild(muteBtn);
         wrap.appendChild(soloBtn);
         container.appendChild(wrap);
@@ -560,6 +590,7 @@
       rowMute = Array(rows).fill(false).map((_, i) => rowMute[i] || false);
       rowSolo = Array(rows).fill(false).map((_, i) => rowSolo[i] || false);
       rowPanValues = Array(rows).fill(0).map((_, i) => rowPanValues[i] ?? rowPan(i));
+      rowGainValues = Array(rows).fill(0.8).map((_, i) => rowGainValues[i] ?? 0.8);
       renderRowControls();
       initToneInstruments();
       setActiveArray(patternSlots[currentPattern]);
@@ -592,6 +623,7 @@
     rowMute = Array(rows).fill(false);
     rowSolo = Array(rows).fill(false);
     rowPanValues = Array(rows).fill(0).map((_, i) => rowPan(i));
+    rowGainValues = Array(rows).fill(0.8);
     renderRowControls();
     document.getElementById('accentSlider').max = String(cols);
     document.getElementById('autoEverySlider').max = String(cols);
@@ -751,7 +783,7 @@
         filter.frequency.value = freq * 4;
         filter.Q.value = 2;
         
-        const baseGain = 0.25 * velocity;
+        const baseGain = 0.25 * velocity * (rowGainValues[row] ?? 0.8);
         gain.gain.setValueAtTime(baseGain, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
         
@@ -773,6 +805,9 @@
           }
           if (rowPanners[row]) {
             rowPanners[row].pan.value = rowPan(row);
+          }
+          if (rowGains[row]) {
+            rowGains[row].gain.value = rowGainValues[row] ?? 0.8;
           }
           const freq = Tone.Frequency(note, "midi").toFrequency();
           inst.triggerAttackRelease(freq, 0.2, now, Math.min(1, velocity));
@@ -1221,6 +1256,7 @@
           rowMute,
           rowSolo,
           rowPanValues,
+          rowGainValues,
           buttons: getActiveArray(),
           currentPattern,
           patternSlots,
@@ -1255,6 +1291,7 @@
         rowMute = Array(rows).fill(false).map((_, i) => state.rowMute?.[i] || false);
         rowSolo = Array(rows).fill(false).map((_, i) => state.rowSolo?.[i] || false);
         rowPanValues = Array(rows).fill(0).map((_, i) => state.rowPanValues?.[i] ?? rowPan(i));
+        rowGainValues = Array(rows).fill(0.8).map((_, i) => state.rowGainValues?.[i] ?? 0.8);
         renderRowControls();
         
         if (state.patternSlots) {
