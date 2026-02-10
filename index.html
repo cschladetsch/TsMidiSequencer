@@ -5,7 +5,12 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { 
-      background: #0a0a0a; 
+      background: radial-gradient(circle at 20% 20%, rgba(0, 255, 128, 0.08), transparent 45%),
+                  radial-gradient(circle at 80% 30%, rgba(0, 128, 255, 0.08), transparent 40%),
+                  radial-gradient(circle at 50% 80%, rgba(255, 0, 128, 0.06), transparent 45%),
+                  #0a0a0a;
+      background-size: 120% 120%;
+      animation: bgFloat 18s ease-in-out infinite;
       color: #fff; 
       font-family: 'Courier New', monospace; 
       padding: 20px;
@@ -14,13 +19,12 @@
       align-items: center;
       gap: 15px;
     }
-    canvas { border: 2px solid #333; cursor: pointer; }
-    #fractalBg { 
-      position: absolute; 
-      opacity: 0.3; 
-      pointer-events: none;
-      filter: blur(1px);
+    @keyframes bgFloat {
+      0% { background-position: 0% 0%, 100% 0%, 50% 100%, 0 0; }
+      50% { background-position: 20% 10%, 80% 20%, 40% 90%, 0 0; }
+      100% { background-position: 0% 0%, 100% 0%, 50% 100%, 0 0; }
     }
+    canvas { border: 2px solid #333; cursor: pointer; }
     #controls { 
       display: inline-flex; 
       flex-direction: column;
@@ -79,6 +83,19 @@
       text-shadow: 0 0 10px #0f0;
       letter-spacing: 2px;
     }
+    .title-row {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .mode-inline {
+      font-size: 11px;
+      color: #0f0;
+      opacity: 0.6;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
     .info {
       color: #666;
       font-size: 11px;
@@ -98,6 +115,13 @@
       font-size: 11px;
       color: #0f0;
       border: 1px solid #0f0;
+    }
+    .mode-dim {
+      opacity: 0.65;
+    }
+    .cache-info {
+      opacity: 0.7;
+      font-size: 10px;
     }
     .canvas-container {
       position: relative;
@@ -121,6 +145,8 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      transform-origin: top left;
+      align-self: flex-start;
     }
     #rowControls {
       display: flex;
@@ -151,7 +177,12 @@
   </style>
 </head>
 <body>
-  <h2>CHRISTIAN'S MUSIC THING</h2>
+  <div class="title-row">
+    <h2>CHRISTIAN'S MUSIC THING</h2>
+    <div class="mode-inline" id="modeInfo">
+      HARMONIC MODE: Perfect Fifth (3:2 ratio)
+    </div>
+  </div>
   
   <div id="controls">
     <div class="controls-group buttons-group">
@@ -164,9 +195,11 @@
       <button id="patternBtn">PATTERN A</button>
       <button id="downloadMidiBtn">DOWNLOAD MIDI</button>
       <button id="midiModeBtn">MIDI MODE: COMPAT</button>
+      <button id="savePatternBtn">SAVE PATTERN</button>
+      <button id="loadPatternBtn">LOAD PATTERN</button>
       <button id="resetViewBtn">RESET VIEW</button>
       <button id="lockBtn">LOCK</button>
-      <button id="humanizeBtn">HUMANIZE</button>
+      <button id="humanizeBtn">HUMANISE</button>
     </div>
     
     <div class="controls-group sliders-group">
@@ -207,14 +240,10 @@
     </div>
   </div>
   
-  <div class="mode-info" id="modeInfo">
-    HARMONIC MODE: Perfect Fifth (3:2 ratio)
-  </div>
   
-  <div class="canvas-wrap">
+  <div class="canvas-wrap" id="canvasWrap">
     <div id="rowControls"></div>
     <div class="canvas-container">
-      <canvas id="fractalBg" width="480" height="480"></canvas>
       <canvas id="grid" width="480" height="480"></canvas>
       <div id="resizeHandle" class="resize-handle" title="Drag to resize"></div>
       <div id="sizeBadge" class="size-badge">12×24</div>
@@ -224,10 +253,26 @@
   <div class="info">
     Click to toggle notes • Colors = prime harmonics • Rows = overtone series • Columns = time steps<br>
     Euclidean mode generates fractal rhythms • Background = Sierpinski triangle from current prime • Drag corner to resize<br>
-    <span class="credit">christian.schladetsch@gmail.com</span>
+    <span class="credit">christian.schladetsch@gmail.com</span> • <span class="cache-info" id="cacheInfo">CACHE: OFFLINE READY</span>
   </div>
   
+  <script src="./tone.min.js"></script>
   <script type="module">
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        const info = document.getElementById("cacheInfo");
+        navigator.serviceWorker.register("./sw.js").then(() => {
+          info.textContent = "CACHE: ON";
+        }).catch(() => {
+          info.textContent = "CACHE: OFF";
+        });
+      });
+    } else {
+      const info = document.getElementById("cacheInfo");
+      if (location.protocol === "file:") {
+        info.textContent = "CACHE: OFF (file://)";
+      }
+    }
     // Prime numbers for harmonic ratios
     const PRIMES = [2, 3, 5, 7, 11, 13, 17, 19];
     const PRIME_NAMES = [
@@ -244,8 +289,6 @@
     // State
     const canvas = document.getElementById('grid');
     const ctx = canvas.getContext('2d');
-    const fractalCanvas = document.getElementById('fractalBg');
-    const fractalCtx = fractalCanvas.getContext('2d');
     
     let currentPrime = 3;
     let fractalDepth = 5;
@@ -255,6 +298,8 @@
     let buttons = [];
     let rowMute = [];
     let rowSolo = [];
+    let rowPanValues = [];
+    let toneReady = false;
     let audioCtx = null;
     let fractalSeed = Math.random();
     let isLocked = false;
@@ -276,16 +321,51 @@
     let saveTimer = null;
     let animRaf = null;
     let animUntil = 0;
+    let lastStepMs = 0;
+    let playheadStep = 0;
+    let playheadDelayMs = 0;
+    let rowInstruments = [];
+    let rowPanners = [];
+    function getInstrumentFactories() {
+      return [
+        () => new Tone.MembraneSynth(),
+        () => new Tone.MetalSynth(),
+        () => new Tone.FMSynth(),
+        () => new Tone.AMSynth(),
+        () => new Tone.DuoSynth(),
+        () => new Tone.MonoSynth(),
+        () => new Tone.Synth(),
+        () => new Tone.Synth()
+      ];
+    }
     
+    async function ensureToneStarted() {
+      if (toneReady) return;
+      await Tone.start();
+      toneReady = true;
+      initToneInstruments();
+    }
+
+    function initToneInstruments() {
+      rowInstruments.forEach(inst => inst.dispose && inst.dispose());
+      rowPanners.forEach(p => p.dispose && p.dispose());
+      rowInstruments = [];
+      rowPanners = [];
+      const factories = getInstrumentFactories();
+      for (let row = 0; row < rows; row++) {
+        const pan = new Tone.Panner(rowPan(row)).toDestination();
+        const make = factories[row % factories.length];
+        const inst = make ? make() : new Tone.Synth();
+        inst.connect(pan);
+        rowPanners.push(pan);
+        rowInstruments.push(inst);
+      }
+    }
+
     // Initialize audio immediately
-    window.addEventListener('click', () => {
-      if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        console.log('Audio context created');
-      }
-      if (audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
+    window.addEventListener('click', async (e) => {
+      await ensureToneStarted();
+      if (e.target && e.target.id === 'playBtn') return;
       if (autoStart && !autoStartTriggered) {
         autoStartTriggered = true;
         startPlayback();
@@ -318,12 +398,16 @@
     function setActiveArray(arr) {
       if (!arr || arr.length !== buttons.length) return;
       for (let i = 0; i < buttons.length; i++) {
-        const next = !!arr[i];
-        if (buttons[i].active !== next) {
-          buttons[i].active = next;
-          buttons[i].lastChange = performance.now();
-        }
+        setButtonActive(buttons[i], !!arr[i]);
       }
+    }
+
+    function setButtonActive(btn, next) {
+      if (btn.active === next) return;
+      btn.lastState = btn.active;
+      btn.active = next;
+      btn.lastChange = performance.now();
+      kickAnim();
     }
 
     function resizePattern(oldPattern, oldCols, oldRows, newCols, newRows) {
@@ -350,8 +434,6 @@
       const h = rows * cellSize;
       canvas.width = w;
       canvas.height = h;
-      fractalCanvas.width = w;
-      fractalCanvas.height = h;
     }
 
     function updateSizeBadge(show = false) {
@@ -376,6 +458,19 @@
         label.style.fontSize = `${Math.round(10 * scale)}px`;
         label.style.color = '#666';
         label.style.minWidth = `${Math.round(20 * scale)}px`;
+        
+        const pan = document.createElement('input');
+        pan.type = 'range';
+        pan.min = '-1';
+        pan.max = '1';
+        pan.step = '0.01';
+        pan.value = (rowPanValues[row] ?? rowPan(row)).toFixed(2);
+        pan.style.width = `${Math.round(60 * scale)}px`;
+        pan.oninput = (e) => {
+          rowPanValues[row] = parseFloat(e.target.value);
+          if (rowPanners[row]) rowPanners[row].pan.value = rowPanValues[row];
+          scheduleSave();
+        };
         
         const muteBtn = document.createElement('button');
         muteBtn.textContent = 'M';
@@ -402,10 +497,34 @@
         };
         
         wrap.appendChild(label);
+        wrap.appendChild(pan);
         wrap.appendChild(muteBtn);
         wrap.appendChild(soloBtn);
         container.appendChild(wrap);
       }
+    }
+
+    
+
+    function fitGridToViewport() {
+      const wrap = document.getElementById('canvasWrap');
+      const controls = document.getElementById('controls');
+      if (!wrap) return;
+      
+      wrap.style.transform = 'scale(1)';
+      wrap.style.width = '';
+      wrap.style.height = '';
+      const wrapRect = wrap.getBoundingClientRect();
+      const controlsRect = controls.getBoundingClientRect();
+      const padding = 20;
+      const availableWidth = Math.max(200, window.innerWidth - padding * 2);
+      const availableHeight = Math.max(200, window.innerHeight - controlsRect.height - padding * 3);
+      const scaleX = availableWidth / wrapRect.width;
+      const scaleY = availableHeight / wrapRect.height;
+      const scale = Math.min(scaleX, scaleY);
+      wrap.style.transform = `scale(${scale})`;
+      wrap.style.width = `${wrapRect.width * scale}px`;
+      wrap.style.height = `${wrapRect.height * scale}px`;
     }
 
     function resizeGrid(newCols, newRows) {
@@ -437,7 +556,9 @@
       
       rowMute = Array(rows).fill(false).map((_, i) => rowMute[i] || false);
       rowSolo = Array(rows).fill(false).map((_, i) => rowSolo[i] || false);
+      rowPanValues = Array(rows).fill(0).map((_, i) => rowPanValues[i] ?? rowPan(i));
       renderRowControls();
+      initToneInstruments();
       setActiveArray(patternSlots[currentPattern]);
       
       const accentSlider = document.getElementById('accentSlider');
@@ -458,8 +579,8 @@
       
       currentStep = 0;
       updateSizeBadge();
-      drawFractal();
       render();
+      fitGridToViewport();
       scheduleSave();
     }
 
@@ -467,15 +588,25 @@
     buttons = initButtons();
     rowMute = Array(rows).fill(false);
     rowSolo = Array(rows).fill(false);
+    rowPanValues = Array(rows).fill(0).map((_, i) => rowPan(i));
     renderRowControls();
     document.getElementById('accentSlider').max = String(cols);
     document.getElementById('autoEverySlider').max = String(cols);
+    window.addEventListener('resize', fitGridToViewport);
+    initToneInstruments();
     
     // Color based on prime factorization
     function getPrimeColor(row) {
       const hue = (row * 137.508) % 360; // Golden angle
       return `hsl(${hue}, 70%, 40%)`;
     }
+
+    function rowPan(row) {
+      if (rowPanValues[row] !== undefined) return rowPanValues[row];
+      if (rows <= 1) return 0;
+      return (row / (rows - 1)) * 2 - 1;
+    }
+
     
     // Calculate note using simpler frequency mapping
     function getHarmonicNote(row, prime) {
@@ -487,45 +618,8 @@
       return baseNote + octave + scale + (prime - 3) * 2;
     }
     
-    // Sierpinski triangle fractal
-    function drawSierpinski(x, y, size, depth, prime) {
-      if (depth === 0) {
-        const offset = Math.sin(fractalSeed * 1000 + x + y) * 20;
-        const hue = ((prime * 40) + offset) % 360;
-        fractalCtx.fillStyle = `hsla(${hue}, 70%, 50%, ${0.1 + Math.abs(Math.sin(fractalSeed * depth)) * 0.1})`;
-        fractalCtx.beginPath();
-        fractalCtx.moveTo(x, y);
-        fractalCtx.lineTo(x + size, y);
-        fractalCtx.lineTo(x + size/2, y - size * 0.866);
-        fractalCtx.closePath();
-        fractalCtx.fill();
-        return;
-      }
-      
-      const halfSize = size / 2;
-      const height = size * 0.866 / 2;
-      const jitter = Math.sin(fractalSeed * depth * 100) * 5;
-      
-      drawSierpinski(x + jitter, y, halfSize, depth - 1, prime);
-      drawSierpinski(x + halfSize - jitter, y, halfSize, depth - 1, prime);
-      drawSierpinski(x + halfSize/2, y - height + jitter, halfSize, depth - 1, prime);
-      
-      if (prime >= 5 && depth > 2) {
-        drawSierpinski(x + halfSize/4, y - height/2, halfSize/2, depth - 2, prime);
-      }
-    }
+
     
-    // Draw fractal background
-    function drawFractal() {
-      const w = fractalCanvas.width;
-      const h = fractalCanvas.height;
-      const size = Math.min(w, h) * 0.85;
-      const x = (w - size) / 2;
-      const y = h - (h - size) / 2;
-      fractalCtx.fillStyle = '#000';
-      fractalCtx.fillRect(0, 0, w, h);
-      drawSierpinski(x, y, size, fractalDepth, currentPrime);
-    }
     
     
     // Update all notes when prime changes
@@ -537,7 +631,6 @@
       });
       document.getElementById('modeInfo').textContent = 
         `HARMONIC MODE: ${PRIME_NAMES[PRIMES.indexOf(prime)]}`;
-      drawFractal();
       render();
     }
     
@@ -586,10 +679,7 @@
         const base = euclideanRhythm(cols, pulses);
         const rot = (seedBits + btn.row * 3) % cols;
         const pattern = rotatePattern(base, rot);
-        if (btn.active !== pattern[btn.col]) {
-          btn.active = pattern[btn.col];
-          btn.lastChange = performance.now();
-        }
+        setButtonActive(btn, pattern[btn.col]);
       });
       
       render();
@@ -609,10 +699,7 @@
         const hash = (r * 37 + c * 17 + seedBits) % 100;
         const densityOK = hash < fractalDensity;
         const next = sierp && gate && densityOK;
-        if (btn.active !== next) {
-          btn.active = next;
-          btn.lastChange = performance.now();
-        }
+        setButtonActive(btn, next);
       });
       
       render();
@@ -620,15 +707,16 @@
 
     function regenerateFractal() {
       fractalSeed = Math.random();
-      drawFractal();
       generateFractalPattern();
       generateEuclideanPatternWithSeed();
+      kickAnim();
     }
     
     let isPlaying = false;
     let currentStep = 0;
     let bpm = 120;
     let intervalId = null;
+    let nextStepAt = 0;
     
     function rowAudible(row) {
       const anySolo = rowSolo.some(Boolean);
@@ -636,28 +724,25 @@
       return !rowMute[row];
     }
     
-    function playNote(note, velocity = 1, delayMs = 0, detune = 0) {
-      if (!audioCtx) {
-        console.log('Audio context not ready');
-        return;
-      }
-      
+    function playNoteFallback(note, velocity, delayMs, detune, row) {
+      if (!audioCtx) return;
       try {
         const now = audioCtx.currentTime + Math.max(0, delayMs) / 1000;
-        
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         const filter = audioCtx.createBiquadFilter();
+        const panner = audioCtx.createStereoPanner();
         
         osc.connect(filter);
         filter.connect(gain);
-        gain.connect(audioCtx.destination);
+        gain.connect(panner);
+        panner.connect(audioCtx.destination);
         
-        // MIDI note to frequency
         const freq = 440 * Math.pow(2, (note - 69) / 12);
         osc.frequency.value = freq;
         osc.type = 'sawtooth';
         osc.detune.value = detune;
+        panner.pan.value = rowPan(row);
         
         filter.type = 'lowpass';
         filter.frequency.value = freq * 4;
@@ -673,6 +758,30 @@
         console.error('Audio error:', e);
       }
     }
+
+    function playNote(note, velocity = 1, delayMs = 0, detune = 0, row = 0) {
+      if (toneReady) {
+        try {
+          const now = Tone.now() + Math.max(0, delayMs) / 1000;
+          const inst = rowInstruments[row];
+          if (!inst) {
+            playNoteFallback(note, velocity, delayMs, detune, row);
+            return;
+          }
+          if (rowPanners[row]) {
+            rowPanners[row].pan.value = rowPan(row);
+          }
+          const freq = Tone.Frequency(note, "midi").toFrequency();
+          inst.triggerAttackRelease(freq, 0.2, now, Math.min(1, velocity));
+          if (inst.detune) inst.detune.value = detune;
+        } catch (e) {
+          console.error('Tone error, falling back:', e);
+          playNoteFallback(note, velocity, delayMs, detune, row);
+        }
+        return;
+      }
+      playNoteFallback(note, velocity, delayMs, detune, row);
+    }
     
     // Render grid
     function render() {
@@ -681,7 +790,7 @@
       const h = canvas.height;
       ctx.clearRect(0, 0, w, h);
       // Let the fractal canvas show through a bit
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
       ctx.fillRect(0, 0, w, h);
       
       const pad = Math.max(2, Math.floor(cellSize * 0.07));
@@ -693,7 +802,7 @@
         const x = col * cellSize;
         const y = row * cellSize;
         
-        const isCurrentStep = isPlaying && col === currentStep;
+        const isCurrentStep = isPlaying && col === playheadStep;
         
         if (isCurrentStep) {
           ctx.fillStyle = '#1a1a1a';
@@ -702,16 +811,54 @@
         
         const btn = buttons[i];
         const isActive = btn.active;
-        const animT = Math.min(1, (nowMs - btn.lastChange) / 140);
+        const animT = Math.min(1, (nowMs - btn.lastChange) / 450);
         const animEase = animT * (2 - animT); // ease out
-        const pulse = (1 - animEase) * 0.18;
-        const scale = 1 + (isActive ? pulse : -pulse);
-        const alpha = isActive ? 1 : 0.9 - pulse;
+        const changed = btn.lastChange > 0 && animT < 1;
+        const fromOn = btn.lastState;
+        const toOn = btn.active;
+        let scale = 1;
+        let alpha = isActive ? 1 : 0.9;
+        let drawOn = isActive;
+        
+        if (changed) {
+          if (!fromOn && toOn) {
+            scale = 0.4 + 0.6 * animEase;
+            alpha = 0.1 + 0.9 * animEase;
+            drawOn = true;
+          } else if (fromOn && !toOn) {
+            scale = 1 - 0.6 * animEase;
+            alpha = 1 - 0.9 * animEase;
+            drawOn = true;
+          }
+        }
         const size = box * scale;
         const offset = (box - size) / 2;
         
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = isActive ? btn.color : '#0a0a0a';
+        const isPlayheadCell = isPlaying && col === currentStep && isActive;
+        const decay = isPlayheadCell ? Math.max(0, 1 - ((nowMs - lastStepMs) / 200)) : 0;
+        const boost = isPlayheadCell ? 0.22 + decay * 0.35 : 0;
+        ctx.globalAlpha = Math.min(1, alpha + boost);
+        if (drawOn) {
+          const hue = (row * 137.508) % 360;
+          const pan = rowPan(row);
+          if (Math.abs(pan) < 0.05) {
+            ctx.fillStyle = isPlayheadCell ? `hsl(${hue}, 70%, ${72 + decay * 18}%)` : btn.color;
+          } else {
+            const bright = `hsl(${hue}, 70%, ${isPlayheadCell ? 78 + decay * 16 : 58}%)`;
+            const dark = `hsl(${hue}, 70%, ${isPlayheadCell ? 40 + decay * 10 : 24}%)`;
+            const grad = ctx.createLinearGradient(x + pad, 0, x + pad + box, 0);
+            if (pan < 0) {
+              grad.addColorStop(0, bright);
+              grad.addColorStop(1, dark);
+            } else {
+              grad.addColorStop(0, dark);
+              grad.addColorStop(1, bright);
+            }
+            ctx.fillStyle = grad;
+          }
+        } else {
+          ctx.fillStyle = '#0a0a0a';
+        }
         ctx.fillRect(x + pad + offset, y + pad + offset, size, size);
         
         if (isActive) {
@@ -730,16 +877,19 @@
 
       // Playhead overlay so the column is always visible
       if (isPlaying) {
-        const x = currentStep * cellSize;
+        const stepMs = (60 / bpm) * 1000 / 2;
+        const elapsed = Math.max(0, nowMs - (lastStepMs + playheadDelayMs));
+        const progress = Math.min(1, elapsed / stepMs);
+        const x = ((playheadStep + progress) % cols) * cellSize;
         ctx.fillStyle = 'rgba(0, 255, 0, 0.08)';
         ctx.fillRect(x, 0, cellSize, canvas.height);
-        ctx.strokeStyle = 'rgba(0, 255, 0, 0.35)';
+        ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
         ctx.strokeRect(x + 1, 1, cellSize - 2, canvas.height - 2);
       }
     }
 
-    function kickAnim(ms = 180) {
+    function kickAnim(ms = 450) {
       const now = performance.now();
       animUntil = Math.max(animUntil, now + ms);
       if (animRaf) return;
@@ -757,7 +907,10 @@
     // Sequencer step
     function step() {
       const intervalMs = (60 / bpm) * 1000 / 2;
-      const swingMs = (currentStep % 2 === 1) ? intervalMs * (swingAmount / 100) : 0;
+      lastStepMs = performance.now();
+      playheadStep = currentStep;
+      playheadDelayMs = 0;
+      const loopReset = 0;
       const isAccentStep = (currentStep % accentEvery) === 0;
       const velocity = isAccentStep ? 1.35 : 1.0;
       
@@ -765,16 +918,15 @@
         if (!rowAudible(row)) continue;
         const i = row * cols + currentStep;
         if (buttons[i].active) {
-          let delayMs = swingMs;
+          let delayMs = loopReset;
           let detune = 0;
           let gainScale = velocity;
           if (humanizeOn) {
             detune = (Math.random() * 2 - 1) * 8;
             gainScale *= 1 + (Math.random() * 0.1 - 0.05);
-            delayMs += (Math.random() * 16 - 8);
           }
           if (delayMs < 0) delayMs = 0;
-          playNote(buttons[i].note, gainScale, delayMs, detune);
+          playNote(buttons[i].note, gainScale, delayMs, detune, row);
           eventLog.push({ timeMs: playClockMs + delayMs, note: buttons[i].note, velocity: gainScale });
         }
       }
@@ -791,6 +943,17 @@
       while (eventLog.length && eventLog[0].timeMs < cutoff) eventLog.shift();
       render();
     }
+
+    function scheduleStepLoop() {
+      const intervalMs = (60 / bpm) * 1000 / 2;
+      const now = performance.now();
+      const delay = Math.max(0, nextStepAt - now);
+      intervalId = setTimeout(() => {
+        step();
+        nextStepAt += intervalMs;
+        scheduleStepLoop();
+      }, delay);
+    }
     
     function startPlayback() {
       if (isPlaying) return;
@@ -805,8 +968,8 @@
       if (!buttons.some(b => b.active)) {
         regenerateFractal();
       }
-      const interval = (60 / bpm) * 1000 / 2;
-      intervalId = setInterval(step, interval);
+      nextStepAt = performance.now();
+      scheduleStepLoop();
     }
     
     function stopPlayback() {
@@ -815,18 +978,20 @@
       const btn = document.getElementById('playBtn');
       btn.textContent = 'PLAY';
       btn.classList.remove('playing');
-      clearInterval(intervalId);
+      clearTimeout(intervalId);
       currentStep = 0;
       render();
     }
     
     // Play/Stop
-    document.getElementById('playBtn').onclick = () => {
+    document.getElementById('playBtn').onclick = async () => {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        console.log('Audio context created on play');
       }
-      
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      ensureToneStarted();
       if (isPlaying) {
         stopPlayback();
       } else {
@@ -841,9 +1006,9 @@
       
       if (isPlaying) {
         tempoEvents.push({ timeMs: playClockMs, bpm });
-        clearInterval(intervalId);
-        const interval = (60 / bpm) * 1000 / 2;
-        intervalId = setInterval(step, interval);
+        clearTimeout(intervalId);
+        nextStepAt = performance.now();
+        scheduleStepLoop();
       }
     };
 
@@ -897,7 +1062,6 @@
     document.getElementById('depthSlider').oninput = (e) => {
       fractalDepth = parseInt(e.target.value);
       document.getElementById('depthValue').textContent = fractalDepth;
-      drawFractal();
       scheduleSave();
     };
 
@@ -930,7 +1094,88 @@
       setActiveArray(patternSlots[currentPattern]);
       document.getElementById('patternBtn').textContent = `PATTERN ${currentPattern}`;
       render();
+      kickAnim();
       scheduleSave();
+    };
+
+    document.getElementById('savePatternBtn').onclick = () => {
+      ensurePatternSlots();
+      patternSlots[currentPattern] = getActiveArray();
+      const name = prompt("Save pattern as:", `pattern-${currentPattern.toLowerCase()}`);
+      if (!name) return;
+      const payload = {
+        rows,
+        cols,
+        pattern: getActiveArray(),
+        settings: {
+          bpm,
+          primeValue: currentPrime,
+          fractalDepth,
+          swingAmount,
+          accentEvery,
+          autoEvery,
+          autoFractal,
+          humanizeOn,
+          isLocked,
+          fractalDensity
+        }
+      };
+      localStorage.setItem(`cmt_pattern_${name}`, JSON.stringify(payload));
+      scheduleSave();
+    };
+
+    document.getElementById('loadPatternBtn').onclick = () => {
+      const name = prompt("Load pattern name:");
+      if (!name) return;
+      const raw = localStorage.getItem(`cmt_pattern_${name}`);
+      if (!raw) return;
+      try {
+        const payload = JSON.parse(raw);
+        if (payload.rows && payload.cols) {
+          resizeGrid(payload.cols, payload.rows);
+        }
+        if (payload.pattern) {
+          setActiveArray(payload.pattern);
+        }
+        const s = payload.settings || {};
+        bpm = s.bpm ?? bpm;
+        currentPrime = s.primeValue ?? currentPrime;
+        fractalDepth = s.fractalDepth ?? fractalDepth;
+        swingAmount = s.swingAmount ?? swingAmount;
+        accentEvery = s.accentEvery ?? accentEvery;
+        autoEvery = s.autoEvery ?? autoEvery;
+        autoFractal = s.autoFractal ?? autoFractal;
+        humanizeOn = s.humanizeOn ?? humanizeOn;
+        isLocked = s.isLocked ?? isLocked;
+        fractalDensity = s.fractalDensity ?? fractalDensity;
+        
+        document.getElementById('bpmSlider').value = bpm;
+        document.getElementById('bpmValue').textContent = bpm;
+        document.getElementById('primeSlider').value = PRIMES.indexOf(currentPrime);
+        document.getElementById('primeValue').textContent = currentPrime;
+        document.getElementById('depthSlider').value = fractalDepth;
+        document.getElementById('depthValue').textContent = fractalDepth;
+        document.getElementById('swingSlider').value = swingAmount;
+        document.getElementById('swingValue').textContent = swingAmount;
+        document.getElementById('accentSlider').value = accentEvery;
+        document.getElementById('accentValue').textContent = accentEvery;
+        document.getElementById('autoEverySlider').value = autoEvery;
+        document.getElementById('autoEveryValue').textContent = autoEvery;
+        document.getElementById('densitySlider').value = fractalDensity;
+        document.getElementById('densityValue').textContent = fractalDensity;
+        
+        document.getElementById('autoFractalBtn').classList.toggle('active', autoFractal);
+        document.getElementById('humanizeBtn').classList.toggle('active', humanizeOn);
+        document.getElementById('lockBtn').classList.toggle('active', isLocked);
+        document.getElementById('patternBtn').textContent = `PATTERN ${currentPattern}`;
+        
+        updatePrimeHarmonics(currentPrime);
+        render();
+        kickAnim();
+        scheduleSave();
+      } catch (e) {
+        console.warn("Failed to load pattern", e);
+      }
     };
 
     // Reset view
@@ -953,6 +1198,7 @@
           cols,
           rowMute,
           rowSolo,
+          rowPanValues,
           buttons: getActiveArray(),
           currentPattern,
           patternSlots,
@@ -986,6 +1232,7 @@
         resizeGrid(state.cols, state.rows);
         rowMute = Array(rows).fill(false).map((_, i) => state.rowMute?.[i] || false);
         rowSolo = Array(rows).fill(false).map((_, i) => state.rowSolo?.[i] || false);
+        rowPanValues = Array(rows).fill(0).map((_, i) => state.rowPanValues?.[i] ?? rowPan(i));
         renderRowControls();
         
         if (state.patternSlots) {
@@ -1206,22 +1453,31 @@
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
       if (isLocked) return;
       
       const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const scaleX = rect.width / canvas.width;
+      const scaleY = rect.height / canvas.height;
+      const x = (e.clientX - rect.left) / scaleX;
+      const y = (e.clientY - rect.top) / scaleY;
       const col = Math.floor(x / cellSize);
       const row = Math.floor(y / cellSize);
       const i = row * cols + col;
       
       if (row >= 0 && row < rows && col >= 0 && col < cols) {
-        buttons[i].active = !buttons[i].active;
-        buttons[i].lastChange = performance.now();
-        buttons[i].lastState = buttons[i].active;
+        setButtonActive(buttons[i], !buttons[i].active);
+        ensurePatternSlots();
+        patternSlots[currentPattern] = getActiveArray();
+        if (autoFractal) {
+          autoFractal = false;
+          document.getElementById('autoFractalBtn').classList.toggle('active', autoFractal);
+        }
         
         if (buttons[i].active && !isPlaying) {
-          playNote(buttons[i].note);
+          playNote(buttons[i].note, 1, 0, 0, row);
         }
         
         render();
@@ -1269,12 +1525,7 @@
     
     // Clear
     document.getElementById('clearBtn').onclick = () => {
-      buttons.forEach(btn => {
-        if (btn.active) {
-          btn.active = false;
-          btn.lastChange = performance.now();
-        }
-      });
+      buttons.forEach(btn => setButtonActive(btn, false));
       render();
       kickAnim();
       scheduleSave();
@@ -1282,13 +1533,7 @@
     
     // Random
     document.getElementById('randomBtn').onclick = () => {
-      buttons.forEach(btn => {
-        const next = Math.random() > 0.7;
-        if (btn.active !== next) {
-          btn.active = next;
-          btn.lastChange = performance.now();
-        }
-      });
+      buttons.forEach(btn => setButtonActive(btn, Math.random() > 0.7));
       render();
       kickAnim();
       scheduleSave();
@@ -1310,7 +1555,6 @@
     };
     
     // Initial render
-    drawFractal();
     render();
 
     // Default states
@@ -1319,6 +1563,7 @@
     document.getElementById('patternBtn').textContent = `PATTERN ${currentPattern}`;
     updateSizeBadge();
     loadState();
+    fitGridToViewport();
     // Keep PLAY until audio actually starts on user gesture.
   </script>
 </body>
