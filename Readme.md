@@ -1,39 +1,43 @@
 # Fractal Grid Sequencer
 
-Standalone browser tracker/sequencer with generative rhythm tools and a subtle animated background.
-
-## Features
-- Clickable grid with resizable rows/columns (drag the corner)
-- Fractal and Euclidean pattern generators
-- Auto Fractal mode with phrase-based regeneration (per phrase interval)
-- Swing, accent, density, and humanize controls
-- Synth and sample sound bank selection
-- Pattern A/B memory toggle
-- Per-row mute/solo controls plus pan + volume sliders
-- Per-note pitch offsets (drag up/down on a block)
-- Voice row (last row) with glide/merge behavior across gaps
-- MIDI export (Compatible or SMPTE time-locked)
-- Runs from a single `index.html` (no build required)
+A standalone browser grid sequencer with fractal/Euclidean rhythm tools, per-row mixing, and built‑in synth/sample sound banks.
 
 ## Quick Start (No Build)
 
 Open `index.html` directly in a modern browser.
 
-**Tip:** If audio doesn't start automatically, click anywhere in the page to unlock audio playback.
+**Tip:** If audio doesn’t start automatically, click anywhere in the page to unlock audio playback.
+
+## Features
+- Clickable grid with resizable rows/columns (drag the corner)
+- Fractal and Euclidean pattern generators
+- Auto‑Fractal mode with phrase‑based regeneration
+- Swing, accent, density, and humanize controls
+- Pattern A/B toggle
+- Per‑row mute/solo, pan, and volume
+- Per‑note pitch offsets (drag up/down on a block)
+- Voice row (last row) with glide/merge behavior across gaps
+- MIDI export (PPQ or SMPTE time‑locked)
+- Synth and sample sound bank selection
+- Runs from a single `index.html` (no build required)
 
 ## Controls Overview
 - **PLAY**: Start/stop playback.
 - **CLEAR / RANDOM**: Reset or randomize the grid.
-- **EUCLIDEAN**: Generates evenly-distributed rhythms (tied to current seed).
-- **FRACTAL / AUTO FRACTAL**: Generate and optionally auto-regenerate fractal patterns per phrase.
+- **EUCLIDEAN**: Generate evenly‑distributed rhythms.
+- **FRACTAL / AUTO FRACTAL**: Generate and optionally auto‑regenerate fractal patterns per phrase.
 - **PATTERN A/B**: Toggle between two stored patterns.
-- **HUMANIZE**: Adds subtle timing, detune, and velocity variation.
-- **MIDI MODE**: Toggle between Compatible (PPQ) and SMPTE (time-locked) export.
-- **DOWNLOAD MIDI**: Exports the last N minutes (prompted).
+- **HUMANISE**: Adds subtle timing, detune, and velocity variation.
+- **MIDI MODE**: Toggle between PPQ and SMPTE export.
+- **DOWNLOAD MIDI**: Export the last N minutes (prompted).
 - **SOUND BANK**: Switch between synth banks and bundled sample banks.
-- **Pitch adjust**: Click-drag up/down on any block to set pitch offset (line marker).
+- **Pitch adjust**: Click‑drag up/down on a block to set pitch offset.
 - **M/S per row**: Mute or Solo each row. Pan and volume sliders are to the left.
-- **Voice row**: The last row uses a formant-style synth that fades to zero between runs and ramps into the next pitch.
+- **Voice row**: The last row uses a formant‑style synth that fades to zero between runs and ramps into the next pitch.
+
+## Sound Banks
+- Built‑in synth banks are defined in `index.html`.
+- Sample banks live under `assets/samples/` and are bundled in this repo.
 
 ## File Formats
 
@@ -49,7 +53,7 @@ Used by the **Load File** button and `patternFileInput`.
 - `settings`: object (see below)
 
 **Ordering**
-- `pattern` is **row-major**: index = `row * cols + col`.
+- `pattern` is **row‑major**: index = `row * cols + col`.
 
 **Example**
 ```json
@@ -74,18 +78,18 @@ Used by the **Load File** button and `patternFileInput`.
 ```
 
 ### Full State (LocalStorage `cmt_state_v1`)
-This is the complete app state saved to LocalStorage. You can export/import it if you want full restoration.
+Complete app state saved to LocalStorage.
 
-**Top-level fields**
+**Top‑level fields**
 - `rows`: integer
 - `cols`: integer
 - `rowMute`: boolean array, length `rows`
 - `rowSolo`: boolean array, length `rows`
-- `rowPanValues`: number array, length `rows` (typically -1..1)
-- `rowGainValues`: number array, length `rows` (typically 0..1)
-- `buttons`: boolean array, length `rows * cols` (same ordering as `pattern`)
+- `rowPanValues`: number array, length `rows`
+- `rowGainValues`: number array, length `rows`
+- `buttons`: boolean array, length `rows * cols`
 - `currentPattern`: `"A"` or `"B"`
-- `patternSlots`: object with optional `A` and `B` arrays (boolean array length `rows * cols`)
+- `patternSlots`: object with optional `A` and `B` arrays
 - `settings`: object (see below)
 
 **`settings` fields**
@@ -99,18 +103,19 @@ This is the complete app state saved to LocalStorage. You can export/import it i
 - `humanizeOn`: boolean
 - `isLocked`: boolean
 - `fractalDensity`: number
-- `soundBankId`: string
 - `midiMode`: number (index into MIDI mode list)
+- `soundBankId`: string
 
 **Notes**
 - Missing fields fall back to current UI defaults.
-- If `patternSlots` is present, the app will restore the current pattern from it.
+- If `patternSlots` is present, the app restores the current pattern from it.
 
 ### Schemas And Examples
 - JSON Schemas: `schema/pattern.schema.json`, `schema/state.schema.json`
 - Examples: `examples/pattern-example.json`, `examples/state-example.json`
 - Validate: `npm run validate:schema`
 
-### Sound Banks
-- Built-in synth banks are defined in `index.html`.
-- Sample banks live under `assets/samples/` and are bundled in this repo.
+## Development
+- `npm run dev` for a local Vite server (optional)
+- `npm run build` to build the TS/Vite bundle (optional)
+- `npm run preview` to preview the build (optional)
