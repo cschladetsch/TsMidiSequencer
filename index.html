@@ -135,6 +135,7 @@
     .canvas-container {
       position: relative;
       display: inline-block;
+      overflow: visible;
     }
     .size-badge {
       position: absolute;
@@ -179,14 +180,16 @@
     }
     .resize-handle {
       position: absolute;
-      right: -10px;
-      bottom: -10px;
-      width: 16px;
-      height: 16px;
+      right: 2px;
+      bottom: 2px;
+      width: 18px;
+      height: 18px;
       background: #0f0;
-      border: 1px solid #000;
+      border: 2px solid #000;
       cursor: nwse-resize;
       opacity: 0.6;
+      z-index: 5;
+      box-shadow: 0 0 6px rgba(0, 255, 0, 0.6);
     }
   </style>
 </head>
@@ -203,7 +206,6 @@
       <button id="playBtn" title="Start/stop playback">PLAY</button>
       <button id="clearBtn" title="Clear all steps">CLEAR</button>
       <button id="randomBtn" title="Randomize the grid">RANDOM</button>
-      <button id="euclidBtn" title="Generate Euclidean rhythm">EUCLIDEAN</button>
       <button id="fractalBtn" title="Generate fractal pattern">FRACTAL</button>
       <button id="autoFractalBtn" title="Auto-regenerate fractal per phrase">AUTO FRACTAL</button>
       <button id="patternBtn" title="Toggle pattern A/B">PATTERN A</button>
@@ -212,6 +214,7 @@
       <button id="savePatternBtn" title="Save current pattern to local storage">SAVE PATTERN</button>
       <button id="loadPatternBtn" title="Load a saved pattern from local storage">LOAD PATTERN</button>
       <button id="loadFileBtn" title="Load a pattern JSON file">LOAD FILE</button>
+      <input id="patternFileInput" type="file" accept="application/json" style="display:none">
       <button id="resetViewBtn" title="Reset grid size to default">RESET VIEW</button>
       <button id="lockBtn" title="Lock/unlock editing">LOCK</button>
       <button id="humanizeBtn" title="Toggle timing/velocity humanize">HUMANISE</button>
@@ -277,7 +280,7 @@
   </div>
   
   <script src="./tone.min.js"></script>
-  <script type="module">
+  <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         const info = document.getElementById("cacheInfo");
@@ -319,7 +322,7 @@
     let buttons = [];
     let rowMute = [];
     let rowSolo = [];
-    const voiceRows = 1;
+    let rowVoice = [];
     let rowPanValues = [];
     let rowGainValues = [];
     let rowVoiceState = [];
@@ -358,13 +361,6 @@
     let playheadStep = 0;
     let playheadDelayMs = 0;
     let renderRaf = null;
-    const VOICE_VOWELS = [
-      { f1: 800, f2: 1150 },  // "ah"
-      { f1: 400, f2: 2000 },  // "ee"
-      { f1: 350, f2: 1700 },  // "ih"
-      { f1: 450, f2: 800 },   // "oh"
-      { f1: 325, f2: 700 }    // "oo"
-    ];
     const soundBanks = [
       {
         id: "synth-classic",
@@ -489,6 +485,30 @@
       return bank.factories ? bank.factories() : [() => new Tone.Synth()];
     }
 
+    function getVoiceInst(inst) {
+      return inst?.synth ?? inst;
+    }
+
+    function isSamplerInst(inst) {
+      if (!inst) return false;
+      if (typeof Tone !== 'undefined' && Tone.Sampler && inst instanceof Tone.Sampler) return true;
+      return inst.constructor && inst.constructor.name === 'Sampler';
+    }
+
+    function noteArgForInst(inst, midiNote) {
+      if (isSamplerInst(inst)) {
+        return Tone.Frequency(midiNote, 'midi').toNote();
+      }
+      return Tone.Frequency(midiNote, 'midi').toFrequency();
+    }
+
+    function triggerReleaseInst(inst, time) {
+      const target = getVoiceInst(inst);
+      if (target && typeof target.triggerRelease === 'function') {
+        target.triggerRelease(time);
+      }
+    }
+
     function populateSoundBankSelect() {
       if (!soundBankSelect) return;
       soundBankSelect.innerHTML = '';
@@ -527,50 +547,8 @@
       for (let row = 0; row < rows; row++) {
         const gain = new Tone.Gain(rowGainValues[row] ?? 0.8);
         const pan = new Tone.Panner(rowPan(row)).toDestination();
-        let inst;
-        if (isVoiceRow(row)) {
-          const synth = new Tone.Synth({
-            oscillator: { type: "triangle" },
-            envelope: { attack: 0.02, decay: 0.12, sustain: 0.2, release: 0.3 }
-          });
-          synth.volume.value = -2;
-          const dry = new Tone.Gain(0.9);
-          const f1 = new Tone.Filter(VOICE_VOWELS[0].f1, "bandpass");
-          f1.Q.value = 2.5;
-          const f2 = new Tone.Filter(VOICE_VOWELS[0].f2, "bandpass");
-          f2.Q.value = 2.5;
-          const mix = new Tone.Gain(1.2);
-          synth.connect(dry);
-          synth.connect(f1);
-          synth.connect(f2);
-          dry.connect(mix);
-          f1.connect(mix);
-          f2.connect(mix);
-          inst = {
-            output: mix,
-            synth,
-            dry,
-            f1,
-            f2,
-            mix,
-            triggerAttackRelease: (note, dur, time, vel) => {
-              const v = VOICE_VOWELS[Math.floor(Math.random() * VOICE_VOWELS.length)];
-              f1.frequency.setValueAtTime(v.f1, time);
-              f2.frequency.setValueAtTime(v.f2, time);
-              synth.triggerAttackRelease(note, dur, time, vel);
-            },
-            dispose: () => {
-              synth.dispose();
-              dry.dispose();
-              f1.dispose();
-              f2.dispose();
-              mix.dispose();
-            }
-          };
-        } else {
-          const make = factories[row % factories.length];
-          inst = make ? make() : new Tone.Synth();
-        }
+        const make = factories[row % factories.length];
+        const inst = make ? make() : new Tone.Synth();
         if (inst.output) {
           inst.output.connect(gain);
         } else {
@@ -686,6 +664,7 @@
       container.innerHTML = '';
       container.style.height = `${totalGridHeight}px`;
       const scale = Math.max(0.75, Math.min(1.1, cellSize / 60));
+      let voiceIndex = 0;
       for (let row = 0; row < rows; row++) {
         const wrap = document.createElement('div');
         wrap.className = 'row-control';
@@ -693,11 +672,17 @@
         wrap.style.alignItems = 'center';
         
         const label = document.createElement('span');
-        label.textContent = String(row + 1).padStart(2, '0');
+        if (isVoiceRow(row)) {
+          voiceIndex += 1;
+          label.textContent = `V${voiceIndex}`;
+          label.title = `Voice channel ${voiceIndex}`;
+        } else {
+          label.textContent = String(row + 1).padStart(2, '0');
+          label.title = `Row ${row + 1}`;
+        }
         label.style.fontSize = `${Math.round(10 * scale)}px`;
         label.style.color = '#666';
         label.style.minWidth = `${Math.round(20 * scale)}px`;
-        label.title = `Row ${row + 1}`;
         
         const pan = document.createElement('input');
         pan.type = 'range';
@@ -742,8 +727,8 @@
         muteBtn.onclick = () => {
           rowMute[row] = !rowMute[row];
           renderRowControls();
-          if (toneReady && rowMute[row] && rowInstruments[row]?.synth && rowGains[row]) {
-            rowInstruments[row].synth.triggerRelease();
+          if (toneReady && rowMute[row] && rowInstruments[row] && rowGains[row]) {
+            triggerReleaseInst(rowInstruments[row]);
             rowGains[row].gain.value = 0;
             rowVoiceState[row] = { on: false, freq: 0 };
           }
@@ -760,16 +745,33 @@
         soloBtn.onclick = () => {
           rowSolo[row] = !rowSolo[row];
           renderRowControls();
-          if (toneReady && !rowAudible(row) && rowInstruments[row]?.synth && rowGains[row]) {
-            rowInstruments[row].synth.triggerRelease();
+          if (toneReady && !rowAudible(row) && rowInstruments[row] && rowGains[row]) {
+            triggerReleaseInst(rowInstruments[row]);
             rowGains[row].gain.value = 0;
             rowVoiceState[row] = { on: false, freq: 0 };
           }
           scheduleSave();
         };
         
+        const voiceBtn = document.createElement('button');
+        voiceBtn.textContent = 'V';
+        voiceBtn.classList.toggle('active', rowVoice[row]);
+        voiceBtn.style.fontSize = `${Math.round(10 * scale)}px`;
+        voiceBtn.style.minWidth = `${Math.round(34 * scale)}px`;
+        voiceBtn.style.padding = `${Math.round(6 * scale)}px ${Math.round(6 * scale)}px`;
+        voiceBtn.title = `Toggle voice mode for row ${row + 1}`;
+        voiceBtn.onclick = () => {
+          rowVoice[row] = !rowVoice[row];
+          rowVoice = normalizeRowVoice(rows, rowVoice);
+          rowVoiceState = rowVoiceState.map(() => ({ on: false, freq: 0 }));
+          initToneInstruments();
+          renderRowControls();
+          scheduleSave();
+        };
+
         wrap.appendChild(label);
         wrap.appendChild(sliders);
+        wrap.appendChild(voiceBtn);
         wrap.appendChild(muteBtn);
         wrap.appendChild(soloBtn);
         container.appendChild(wrap);
@@ -829,13 +831,14 @@
       
       rowMute = Array(rows).fill(false).map((_, i) => rowMute[i] || false);
       rowSolo = Array(rows).fill(false).map((_, i) => rowSolo[i] || false);
+      rowVoice = normalizeRowVoice(rows, rowVoice);
       rowPanValues = Array(rows).fill(0).map((_, i) => rowPanValues[i] ?? rowPan(i));
       rowGainValues = Array(rows).fill(0.8).map((_, i) => rowGainValues[i] ?? 0.8);
       rowVoiceState = Array(rows).fill(0).map(() => ({ on: false, freq: 0 }));
       if (toneReady) {
         for (let row = 0; row < rows; row++) {
-          if (rowInstruments[row]?.synth && rowGains[row]) {
-            rowInstruments[row].synth.triggerRelease();
+          if (rowInstruments[row] && rowGains[row]) {
+            triggerReleaseInst(rowInstruments[row]);
             rowGains[row].gain.value = 0;
           }
         }
@@ -871,6 +874,7 @@
     buttons = initButtons();
     rowMute = Array(rows).fill(false);
     rowSolo = Array(rows).fill(false);
+    rowVoice = normalizeRowVoice(rows, rowVoice);
     rowPanValues = Array(rows).fill(0).map((_, i) => rowPan(i));
     rowGainValues = Array(rows).fill(0.8);
     rowVoiceState = Array(rows).fill(0).map(() => ({ on: false, freq: 0 }));
@@ -900,7 +904,7 @@
     }
 
     function isVoiceRow(row) {
-      return row >= rows - voiceRows;
+      return !!rowVoice[row];
     }
 
     
@@ -1054,6 +1058,32 @@
       }
       return { prevDist, nextDist, prevPitch, nextPitch };
     }
+
+    function getVoiceTargetPitch(row, col) {
+      const info = getVoiceRunInfo(row, col);
+      const idx = row * cols + col;
+      const isActive = buttons[idx].active;
+      let targetPitch = buttons[idx].pitchOffset || 0;
+      if (isActive) return targetPitch;
+      if (info.prevDist !== null && info.nextDist !== null) {
+        const total = info.prevDist + info.nextDist;
+        const t = total > 0 ? (info.prevDist / total) : 0;
+        const a = info.prevPitch ?? 0;
+        const b = info.nextPitch ?? 0;
+        return a + (b - a) * t;
+      }
+      if (info.prevDist !== null) return info.prevPitch ?? 0;
+      if (info.nextDist !== null) return info.nextPitch ?? 0;
+      return targetPitch;
+    }
+
+    function normalizeRowVoice(nextRows, prev) {
+      const out = Array(nextRows).fill(false);
+      if (Array.isArray(prev)) {
+        for (let i = 0; i < nextRows; i++) out[i] = !!prev[i];
+      }
+      return out;
+    }
     
     function playNoteFallback(note, velocity, delayMs, detune, row) {
       if (!audioCtx) return;
@@ -1105,11 +1135,11 @@
           if (rowGains[row]) {
             rowGains[row].gain.value = rowGainValues[row] ?? 0.8;
           }
-          const freq = Tone.Frequency(note, "midi").toFrequency();
           const dur = isVoiceRow(row) ? 0.5 : 0.2;
-          inst.triggerAttackRelease(freq, dur, now, Math.min(1, velocity));
-          if (inst.detune) inst.detune.value = detune;
-          if (inst.synth && inst.synth.detune) inst.synth.detune.value = detune;
+          const noteArg = noteArgForInst(inst, note);
+          inst.triggerAttackRelease(noteArg, dur, now, Math.min(1, velocity));
+          const detuneTarget = inst?.detune ?? inst?.synth?.detune;
+          if (detuneTarget) detuneTarget.value = detune;
         } catch (e) {
           console.error('Tone error, falling back:', e);
           playNoteFallback(note, velocity, delayMs, detune, row);
@@ -1173,6 +1203,24 @@
         const boxH = getRowHeight(row) - pad * 2;
         const sizeH = boxH * scale;
         const offsetY = (boxH - sizeH) / 2;
+
+        if (isVoice && col === 0) {
+          const topY = y + pad;
+          const centerY = topY + boxH / 2;
+          const range = boxH * 0.7;
+          ctx.strokeStyle = 'rgba(123, 75, 255, 0.35)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          for (let c = 0; c < cols; c++) {
+            const pitch = getVoiceTargetPitch(row, c);
+            const yOff = (pitch / 24) * range;
+            const lineY = Math.max(topY + 3, Math.min(topY + boxH - 3, centerY - yOff));
+            const cx = c * cellSize + cellSize / 2;
+            if (c === 0) ctx.moveTo(cx, lineY);
+            else ctx.lineTo(cx, lineY);
+          }
+          ctx.stroke();
+        }
         
         const isPlayheadCell = isPlaying && col === currentStep && isActive;
         const decay = isPlayheadCell ? Math.max(0, 1 - ((nowMs - lastStepMs) / 200)) : 0;
@@ -1224,12 +1272,49 @@
           ctx.lineTo(x + cellSize - inset, lineY);
           ctx.stroke();
         }
+
+        if (isVoice && isCurrentStep) {
+          const inset = Math.max(4, Math.floor(cellSize * 0.12));
+          const topY = y + pad;
+          const centerY = topY + boxH / 2;
+          const range = boxH * 0.7;
+          const pitch = getVoiceTargetPitch(row, col);
+          const yOff = (pitch / 24) * range;
+          const lineY = Math.max(topY + 3, Math.min(topY + boxH - 3, centerY - yOff));
+          ctx.strokeStyle = '#7b4bff';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(x + inset, lineY);
+          ctx.lineTo(x + cellSize - inset, lineY);
+          ctx.stroke();
+        }
         
         ctx.globalAlpha = 1;
         const voiceStroke = isVoice ? '#7b4bff' : null;
         ctx.strokeStyle = voiceStroke ?? (isActive ? '#fff' : (isCurrentStep ? '#333' : '#222'));
         ctx.lineWidth = isActive ? 2 : 1;
         ctx.strokeRect(x + pad, y + pad, boxW, boxH);
+      }
+
+      // Voice pitch lines across entire sequence
+      for (let row = 0; row < rows; row++) {
+        if (!isVoiceRow(row)) continue;
+        const topY = rowOffsets[row] + pad;
+        const boxH = getRowHeight(row) - pad * 2;
+        const centerY = topY + boxH / 2;
+        const range = boxH * 0.7;
+        ctx.strokeStyle = 'rgba(123, 75, 255, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let c = 0; c < cols; c++) {
+          const pitch = getVoiceTargetPitch(row, c);
+          const yOff = (pitch / 24) * range;
+          const lineY = Math.max(topY + 3, Math.min(topY + boxH - 3, centerY - yOff));
+          const cx = c * cellSize + cellSize / 2;
+          if (c === 0) ctx.moveTo(cx, lineY);
+          else ctx.lineTo(cx, lineY);
+        }
+        ctx.stroke();
       }
 
       // Playhead overlay so the column is always visible
@@ -1299,41 +1384,21 @@
           if (isActive) {
             targetGain = 1;
           } else if (info.prevDist !== null && info.nextDist !== null) {
+            targetGain = 1;
             const total = info.prevDist + info.nextDist;
-            const half = total / 2;
-            if (info.prevDist <= half) {
-              targetGain = 1 - (info.prevDist / half);
-              targetPitch = info.prevPitch ?? 0;
-            } else {
-              targetGain = (info.prevDist - half) / half;
-              targetPitch = info.nextPitch ?? 0;
-            }
+            const t = total > 0 ? (info.prevDist / total) : 0;
+            const a = info.prevPitch ?? 0;
+            const b = info.nextPitch ?? 0;
+            targetPitch = a + (b - a) * t;
           } else {
             targetGain = 0;
           }
           
           if (toneReady) {
-            const inst = rowInstruments[row];
-            if (inst && inst.synth && rowGains[row]) {
-              const freq = Tone.Frequency(buttons[i].note + targetPitch, "midi").toFrequency();
-              if (inst.f1 && inst.f2) {
-                const v = VOICE_VOWELS[(row + currentStep) % VOICE_VOWELS.length];
-                const scale = Math.max(0.45, Math.min(2.5, freq / 220));
-                inst.f1.frequency.setValueAtTime(v.f1 * scale, now);
-                inst.f2.frequency.setValueAtTime(v.f2 * scale, now);
-              }
-              if (!rowVoiceState[row].on && targetGain > 0.01) {
-                inst.synth.triggerAttack(freq, now);
-                rowVoiceState[row].on = true;
-              }
-              if (rowVoiceState[row].on) {
-                inst.synth.frequency.rampTo(freq, 0.05, now);
-              }
-              rowGains[row].gain.rampTo((rowGainValues[row] ?? 0.8) * targetGain, stepMs / 1000);
-              if (targetGain <= 0.01 && rowVoiceState[row].on && info.nextDist === null) {
-                inst.synth.triggerRelease(now);
-                rowVoiceState[row].on = false;
-              }
+            if (targetGain > 0.01) {
+              playNote(buttons[i].note + targetPitch, targetGain, loopReset, 0, row);
+            } else if (rowGains[row]) {
+              rowGains[row].gain.value = 0;
             }
           } else if (isActive) {
             const gainScale = velocity;
@@ -1418,8 +1483,8 @@
       rowVoiceState = rowVoiceState.map(() => ({ on: false, freq: 0 }));
       if (toneReady) {
         for (let row = 0; row < rows; row++) {
-          if (isVoiceRow(row) && rowInstruments[row]?.synth && rowGains[row]) {
-            rowInstruments[row].synth.triggerRelease();
+          if (isVoiceRow(row) && rowInstruments[row] && rowGains[row]) {
+            triggerReleaseInst(rowInstruments[row]);
             rowGains[row].gain.value = 0;
           }
         }
@@ -1442,8 +1507,7 @@
       if (toneReady) {
         for (let row = 0; row < rows; row++) {
           const inst = rowInstruments[row];
-          if (inst?.synth) inst.synth.triggerRelease();
-          if (inst?.triggerRelease) inst.triggerRelease();
+          triggerReleaseInst(inst);
           if (rowGains[row]) rowGains[row].gain.value = 0;
           rowVoiceState[row] = { on: false, freq: 0 };
         }
@@ -1661,24 +1725,27 @@
     };
 
     const patternFileInput = document.getElementById('patternFileInput');
-    document.getElementById('loadFileBtn').onclick = () => {
-      patternFileInput.value = '';
-      patternFileInput.click();
-    };
-    patternFileInput.addEventListener('change', (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const payload = JSON.parse(String(reader.result || ''));
-          applyPatternPayload(payload);
-        } catch (err) {
-          console.warn("Failed to load pattern file", err);
-        }
+    const loadFileBtn = document.getElementById('loadFileBtn');
+    if (patternFileInput && loadFileBtn) {
+      loadFileBtn.onclick = () => {
+        patternFileInput.value = '';
+        patternFileInput.click();
       };
-      reader.readAsText(file);
-    });
+      patternFileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const payload = JSON.parse(String(reader.result || ''));
+            applyPatternPayload(payload);
+          } catch (err) {
+            console.warn("Failed to load pattern file", err);
+          }
+        };
+        reader.readAsText(file);
+      });
+    }
 
     // Reset view
     document.getElementById('resetViewBtn').onclick = () => {
@@ -1700,6 +1767,7 @@
           cols,
           rowMute,
           rowSolo,
+          rowVoice,
           rowPanValues,
           rowGainValues,
           buttons: getActiveArray(),
@@ -1736,6 +1804,9 @@
         resizeGrid(state.cols, state.rows);
         rowMute = Array(rows).fill(false).map((_, i) => state.rowMute?.[i] || false);
         rowSolo = Array(rows).fill(false).map((_, i) => state.rowSolo?.[i] || false);
+        rowVoice = normalizeRowVoice(rows, state.rowVoice);
+        rowVoiceState = Array(rows).fill(0).map(() => ({ on: false, freq: 0 }));
+        initToneInstruments();
         rowPanValues = Array(rows).fill(0).map((_, i) => state.rowPanValues?.[i] ?? rowPan(i));
         rowGainValues = Array(rows).fill(0.8).map((_, i) => state.rowGainValues?.[i] ?? 0.8);
         renderRowControls();
@@ -1998,7 +2069,8 @@
       if (dragCell === null) return;
       const row = Math.floor(dragCell / cols);
       const dy = dragStartY - e.clientY;
-      if (Math.abs(dy) > 2) dragMoved = true;
+      if (!dragMoved && Math.abs(dy) <= 2) return;
+      dragMoved = true;
       const semis = Math.max(-24, Math.min(24, Math.round(dy / 6)));
       buttons[dragCell].pitchOffset = semis;
       if (!buttons[dragCell].active) {
@@ -2075,12 +2147,15 @@
       scheduleSave();
     };
     
-    // Euclidean
-    document.getElementById('euclidBtn').onclick = () => {
-      generateEuclideanPatternWithSeed();
-      kickAnim();
-      scheduleSave();
-    };
+    // Euclidean (optional control)
+    const euclidBtn = document.getElementById('euclidBtn');
+    if (euclidBtn) {
+      euclidBtn.onclick = () => {
+        generateEuclideanPatternWithSeed();
+        kickAnim();
+        scheduleSave();
+      };
+    }
     
     // Regenerate fractal
     document.getElementById('fractalBtn').onclick = () => {

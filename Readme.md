@@ -16,7 +16,7 @@ Open `index.html` directly in a modern browser.
 - Pattern A/B toggle
 - Per‑row mute/solo, pan, and volume
 - Per‑note pitch offsets (drag up/down on a block)
-- Voice row (last row) with glide/merge behavior across gaps
+- Voice mode per row with interpolated pitch through gaps
 - MIDI export (PPQ or SMPTE time‑locked)
 - Synth and sample sound bank selection
 - Runs from a single `index.html` (no build required)
@@ -33,7 +33,7 @@ Open `index.html` directly in a modern browser.
 - **SOUND BANK**: Switch between synth banks and bundled sample banks.
 - **Pitch adjust**: Click‑drag up/down on a block to set pitch offset.
 - **M/S per row**: Mute or Solo each row. Pan and volume sliders are to the left.
-- **Voice row**: The last row uses a formant‑style synth that fades to zero between runs and ramps into the next pitch.
+- **Voice mode**: Toggle `VN` to enable interpolated pitch through gaps on any row.
 
 ## Sound Banks
 - Built‑in synth banks are defined in `index.html`.
