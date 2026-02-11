@@ -40,7 +40,8 @@
         "humanizeOn": { "type": "boolean" },
         "isLocked": { "type": "boolean" },
         "fractalDensity": { "type": "number" },
-        "midiMode": { "type": "number" }
+        "midiMode": { "type": "number" },
+        "soundBankId": { "type": "string" }
       }
     }
   }

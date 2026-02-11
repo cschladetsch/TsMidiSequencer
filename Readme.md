@@ -7,6 +7,7 @@ Standalone browser tracker/sequencer with generative rhythm tools and a subtle a
 - Fractal and Euclidean pattern generators
 - Auto Fractal mode with phrase-based regeneration (per phrase interval)
 - Swing, accent, density, and humanize controls
+- Synth and sample sound bank selection
 - Pattern A/B memory toggle
 - Per-row mute/solo controls plus pan + volume sliders
 - Per-note pitch offsets (drag up/down on a block)
@@ -29,6 +30,7 @@ Open `index.html` directly in a modern browser.
 - **HUMANIZE**: Adds subtle timing, detune, and velocity variation.
 - **MIDI MODE**: Toggle between Compatible (PPQ) and SMPTE (time-locked) export.
 - **DOWNLOAD MIDI**: Exports the last N minutes (prompted).
+- **SOUND BANK**: Switch between synth banks and bundled sample banks.
 - **Pitch adjust**: Click-drag up/down on any block to set pitch offset (line marker).
 - **M/S per row**: Mute or Solo each row. Pan and volume sliders are to the left.
 - **Voice row**: The last row uses a formant-style synth that fades to zero between runs and ramps into the next pitch.
@@ -65,7 +67,8 @@ Used by the **Load File** button and `patternFileInput`.
     "autoFractal": false,
     "humanizeOn": false,
     "isLocked": false,
-    "fractalDensity": 60
+    "fractalDensity": 60,
+    "soundBankId": "synth-classic"
   }
 }
 ```
@@ -96,6 +99,7 @@ This is the complete app state saved to LocalStorage. You can export/import it i
 - `humanizeOn`: boolean
 - `isLocked`: boolean
 - `fractalDensity`: number
+- `soundBankId`: string
 - `midiMode`: number (index into MIDI mode list)
 
 **Notes**
@@ -106,3 +110,7 @@ This is the complete app state saved to LocalStorage. You can export/import it i
 - JSON Schemas: `schema/pattern.schema.json`, `schema/state.schema.json`
 - Examples: `examples/pattern-example.json`, `examples/state-example.json`
 - Validate: `npm run validate:schema`
+
+### Sound Banks
+- Built-in synth banks are defined in `index.html`.
+- Sample banks live under `assets/samples/` and are bundled in this repo.

@@ -15,6 +15,7 @@
     "autoFractal": false,
     "humanizeOn": false,
     "isLocked": false,
-    "fractalDensity": 60
+    "fractalDensity": 60,
+    "soundBankId": "synth-classic"
   }
 }

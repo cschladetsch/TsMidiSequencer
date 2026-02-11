@@ -74,6 +74,14 @@
     input[type="range"] {
       width: 150px;
     }
+    select {
+      background: #0e0e0e;
+      color: #fff;
+      border: 1px solid #333;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-family: inherit;
+    }
     label {
       font-size: 11px;
       color: #0f0;
@@ -192,68 +200,71 @@
   
   <div id="controls">
     <div class="controls-group buttons-group">
-      <button id="playBtn">PLAY</button>
-      <button id="clearBtn">CLEAR</button>
-      <button id="randomBtn">RANDOM</button>
-      <button id="euclidBtn">EUCLIDEAN</button>
-      <button id="fractalBtn">FRACTAL</button>
-      <button id="autoFractalBtn">AUTO FRACTAL</button>
-      <button id="patternBtn">PATTERN A</button>
-      <button id="downloadMidiBtn">DOWNLOAD MIDI</button>
-      <button id="midiModeBtn">MIDI MODE: COMPAT</button>
-      <button id="savePatternBtn">SAVE PATTERN</button>
-      <button id="loadPatternBtn">LOAD PATTERN</button>
-      <button id="loadFileBtn">LOAD FILE</button>
-      <input id="patternFileInput" type="file" accept="application/json" style="display:none">
-      <button id="downloadGaveUpBtn">DOWNLOAD GAVE UP</button>
-      <button id="resetViewBtn">RESET VIEW</button>
-      <button id="lockBtn">LOCK</button>
-      <button id="humanizeBtn">HUMANISE</button>
+      <button id="playBtn" title="Start/stop playback">PLAY</button>
+      <button id="clearBtn" title="Clear all steps">CLEAR</button>
+      <button id="randomBtn" title="Randomize the grid">RANDOM</button>
+      <button id="euclidBtn" title="Generate Euclidean rhythm">EUCLIDEAN</button>
+      <button id="fractalBtn" title="Generate fractal pattern">FRACTAL</button>
+      <button id="autoFractalBtn" title="Auto-regenerate fractal per phrase">AUTO FRACTAL</button>
+      <button id="patternBtn" title="Toggle pattern A/B">PATTERN A</button>
+      <button id="downloadMidiBtn" title="Export MIDI of recent playback">DOWNLOAD MIDI</button>
+      <button id="midiModeBtn" title="Toggle MIDI export mode (PPQ/SMPTE)">MIDI MODE: COMPAT</button>
+      <button id="savePatternBtn" title="Save current pattern to local storage">SAVE PATTERN</button>
+      <button id="loadPatternBtn" title="Load a saved pattern from local storage">LOAD PATTERN</button>
+      <button id="loadFileBtn" title="Load a pattern JSON file">LOAD FILE</button>
+      <button id="resetViewBtn" title="Reset grid size to default">RESET VIEW</button>
+      <button id="lockBtn" title="Lock/unlock editing">LOCK</button>
+      <button id="humanizeBtn" title="Toggle timing/velocity humanize">HUMANISE</button>
     </div>
     
     <div class="controls-group sliders-group">
       <div class="slider-group">
         <label>BPM: <span id="bpmValue">120</span></label>
-        <input type="range" id="bpmSlider" min="60" max="240" value="120">
+        <input type="range" id="bpmSlider" min="60" max="240" value="120" title="Tempo (BPM)">
       </div>
       
       <div class="slider-group">
         <label>Prime: <span id="primeValue">3</span></label>
-        <input type="range" id="primeSlider" min="0" max="7" value="1" step="1">
+        <input type="range" id="primeSlider" min="0" max="7" value="1" step="1" title="Prime harmonic set">
       </div>
       
       <div class="slider-group">
         <label>Fractal Depth: <span id="depthValue">5</span></label>
-        <input type="range" id="depthSlider" min="3" max="8" value="5" step="1">
+        <input type="range" id="depthSlider" min="3" max="8" value="5" step="1" title="Fractal depth">
       </div>
 
       <div class="slider-group">
         <label>Swing: <span id="swingValue">0</span></label>
-        <input type="range" id="swingSlider" min="0" max="30" value="0" step="1">
+        <input type="range" id="swingSlider" min="0" max="30" value="0" step="1" title="Swing amount">
       </div>
 
       <div class="slider-group">
         <label>Accent: <span id="accentValue">4</span></label>
-        <input type="range" id="accentSlider" min="1" max="8" value="4" step="1">
+        <input type="range" id="accentSlider" min="1" max="8" value="4" step="1" title="Accent every N steps">
       </div>
 
       <div class="slider-group">
         <label>Auto Every: <span id="autoEveryValue">4</span></label>
-        <input type="range" id="autoEverySlider" min="1" max="8" value="4" step="1">
+        <input type="range" id="autoEverySlider" min="1" max="8" value="4" step="1" title="Auto-fractal interval (phrases)">
       </div>
 
       <div class="slider-group">
         <label>Density: <span id="densityValue">60</span></label>
-        <input type="range" id="densitySlider" min="10" max="100" value="60" step="1">
+        <input type="range" id="densitySlider" min="10" max="100" value="60" step="1" title="Fractal density">
+      </div>
+
+      <div class="slider-group">
+        <label>Sound Bank</label>
+        <select id="soundBankSelect" title="Choose synth/sample bank"></select>
       </div>
     </div>
   </div>
   
   
   <div class="canvas-wrap" id="canvasWrap">
-    <div id="rowControls"></div>
+    <div id="rowControls" title="Per-row mute/solo, pan, and volume"></div>
     <div class="canvas-container">
-      <canvas id="grid" width="480" height="480"></canvas>
+      <canvas id="grid" width="480" height="480" title="Step grid: click to toggle; drag to pitch-bend"></canvas>
       <div id="resizeHandle" class="resize-handle" title="Drag to resize"></div>
       <div id="sizeBadge" class="size-badge">12×24</div>
     </div>
@@ -298,6 +309,7 @@
     // State
     const canvas = document.getElementById('grid');
     const ctx = canvas.getContext('2d');
+    const soundBankSelect = document.getElementById('soundBankSelect');
     
     let currentPrime = 3;
     let fractalDepth = 5;
@@ -353,20 +365,148 @@
       { f1: 450, f2: 800 },   // "oh"
       { f1: 325, f2: 700 }    // "oo"
     ];
+    const soundBanks = [
+      {
+        id: "synth-classic",
+        label: "Synth: Classic",
+        type: "synth",
+        factories: () => [
+          () => {
+            const s = new Tone.MonoSynth({
+              oscillator: { type: "sawtooth" },
+              filter: { Q: 1, type: "lowpass", rolloff: -24 },
+              envelope: { attack: 0.005, decay: 0.2, sustain: 0.3, release: 0.4 },
+              filterEnvelope: { attack: 0.005, decay: 0.15, sustain: 0.2, release: 0.3, baseFrequency: 60, octaves: 2.5 }
+            });
+            s.volume.value = -6;
+            return s;
+          },
+          () => new Tone.MembraneSynth(),
+          () => new Tone.MetalSynth(),
+          () => new Tone.FMSynth(),
+          () => new Tone.AMSynth(),
+          () => new Tone.DuoSynth(),
+          () => new Tone.MonoSynth(),
+          () => new Tone.Synth()
+        ]
+      },
+      {
+        id: "synth-industrial",
+        label: "Synth: Industrial",
+        type: "synth",
+        factories: () => [
+          () => {
+            const s = new Tone.MonoSynth({
+              oscillator: { type: "square" },
+              filter: { Q: 2.5, type: "lowpass", rolloff: -24 },
+              envelope: { attack: 0.001, decay: 0.15, sustain: 0.15, release: 0.2 },
+              filterEnvelope: { attack: 0.001, decay: 0.12, sustain: 0.1, release: 0.15, baseFrequency: 80, octaves: 3 }
+            });
+            s.volume.value = -5;
+            return s;
+          },
+          () => new Tone.MetalSynth({ resonance: 900, octaves: 1.5 }),
+          () => new Tone.FMSynth({ modulationIndex: 18 }),
+          () => new Tone.DuoSynth({ harmonicity: 1.5, vibratoAmount: 0.2 }),
+          () => new Tone.MembraneSynth({ pitchDecay: 0.03 }),
+          () => new Tone.AMSynth(),
+          () => new Tone.Synth({ oscillator: { type: "sawtooth" } }),
+          () => new Tone.Synth({ oscillator: { type: "pulse" } })
+        ]
+      },
+      {
+        id: "synth-soft",
+        label: "Synth: Soft",
+        type: "synth",
+        factories: () => [
+          () => {
+            const s = new Tone.MonoSynth({
+              oscillator: { type: "triangle" },
+              filter: { Q: 0.5, type: "lowpass", rolloff: -12 },
+              envelope: { attack: 0.02, decay: 0.2, sustain: 0.4, release: 0.6 },
+              filterEnvelope: { attack: 0.02, decay: 0.2, sustain: 0.3, release: 0.5, baseFrequency: 120, octaves: 1.5 }
+            });
+            s.volume.value = -8;
+            return s;
+          },
+          () => new Tone.Synth({ oscillator: { type: "sine" } }),
+          () => new Tone.AMSynth(),
+          () => new Tone.FMSynth({ modulationIndex: 4 }),
+          () => new Tone.DuoSynth({ vibratoAmount: 0.1 }),
+          () => new Tone.Synth({ oscillator: { type: "triangle" } }),
+          () => new Tone.Synth({ oscillator: { type: "sine" } }),
+          () => new Tone.Synth({ oscillator: { type: "sine" } })
+        ]
+      },
+      {
+        id: "samples-starter",
+        label: "Samples: Starter Drums",
+        type: "samples",
+        samples: [
+          "assets/samples/starter/kick.wav",
+          "assets/samples/starter/snare.wav",
+          "assets/samples/starter/hat.wav",
+          "assets/samples/starter/perc.wav"
+        ]
+      },
+      {
+        id: "samples-industrial",
+        label: "Samples: Industrial Hits",
+        type: "samples",
+        samples: [
+          "assets/samples/industrial/kick.wav",
+          "assets/samples/industrial/snare.wav",
+          "assets/samples/industrial/hat.wav",
+          "assets/samples/industrial/hit.wav"
+        ]
+      }
+    ];
+    let soundBankId = "synth-classic";
     let rowInstruments = [];
     let rowPanners = [];
     let rowGains = [];
+    function getSoundBank(id) {
+      return soundBanks.find((b) => b.id === id) || soundBanks[0];
+    }
+
+    function buildSampleFactories(sampleUrls) {
+      return sampleUrls.map((url) => () => {
+        const sampler = new Tone.Sampler({
+          urls: { C3: url },
+          attack: 0.001,
+          release: 0.1
+        });
+        sampler.volume.value = -3;
+        return sampler;
+      });
+    }
+
     function getInstrumentFactories() {
-      return [
-        () => new Tone.MembraneSynth(),
-        () => new Tone.MetalSynth(),
-        () => new Tone.FMSynth(),
-        () => new Tone.AMSynth(),
-        () => new Tone.DuoSynth(),
-        () => new Tone.MonoSynth(),
-        () => new Tone.Synth(),
-        () => new Tone.Synth()
-      ];
+      const bank = getSoundBank(soundBankId);
+      if (bank.type === "samples") {
+        return buildSampleFactories(bank.samples || []);
+      }
+      return bank.factories ? bank.factories() : [() => new Tone.Synth()];
+    }
+
+    function populateSoundBankSelect() {
+      if (!soundBankSelect) return;
+      soundBankSelect.innerHTML = '';
+      soundBanks.forEach((bank) => {
+        const opt = document.createElement('option');
+        opt.value = bank.id;
+        opt.textContent = bank.label;
+        soundBankSelect.appendChild(opt);
+      });
+      soundBankSelect.value = soundBankId;
+    }
+
+    function applySoundBank(nextId) {
+      const bank = getSoundBank(nextId);
+      soundBankId = bank.id;
+      if (soundBankSelect) soundBankSelect.value = soundBankId;
+      initToneInstruments();
+      scheduleSave();
     }
     
     async function ensureToneStarted() {
@@ -388,15 +528,7 @@
         const gain = new Tone.Gain(rowGainValues[row] ?? 0.8);
         const pan = new Tone.Panner(rowPan(row)).toDestination();
         let inst;
-        if (row === 0) {
-          inst = new Tone.MonoSynth({
-            oscillator: { type: "sawtooth" },
-            filter: { Q: 1, type: "lowpass", rolloff: -24 },
-            envelope: { attack: 0.005, decay: 0.2, sustain: 0.3, release: 0.4 },
-            filterEnvelope: { attack: 0.005, decay: 0.15, sustain: 0.2, release: 0.3, baseFrequency: 60, octaves: 2.5 }
-          });
-          inst.volume.value = -6;
-        } else if (isVoiceRow(row)) {
+        if (isVoiceRow(row)) {
           const synth = new Tone.Synth({
             oscillator: { type: "triangle" },
             envelope: { attack: 0.02, decay: 0.12, sustain: 0.2, release: 0.3 }
@@ -565,6 +697,7 @@
         label.style.fontSize = `${Math.round(10 * scale)}px`;
         label.style.color = '#666';
         label.style.minWidth = `${Math.round(20 * scale)}px`;
+        label.title = `Row ${row + 1}`;
         
         const pan = document.createElement('input');
         pan.type = 'range';
@@ -573,6 +706,7 @@
         pan.step = '0.01';
         pan.value = (rowPanValues[row] ?? rowPan(row)).toFixed(2);
         pan.style.width = `${Math.round(60 * scale)}px`;
+        pan.title = `Row ${row + 1} pan`;
         pan.oninput = (e) => {
           rowPanValues[row] = parseFloat(e.target.value);
           if (rowPanners[row]) rowPanners[row].pan.value = rowPanValues[row];
@@ -586,6 +720,7 @@
         vol.step = '0.01';
         vol.value = (rowGainValues[row] ?? 0.8).toFixed(2);
         vol.style.width = `${Math.round(60 * scale)}px`;
+        vol.title = `Row ${row + 1} volume`;
         vol.oninput = (e) => {
           rowGainValues[row] = parseFloat(e.target.value);
           if (rowGains[row]) rowGains[row].gain.value = rowGainValues[row];
@@ -603,6 +738,7 @@
         muteBtn.style.fontSize = `${Math.round(10 * scale)}px`;
         muteBtn.style.minWidth = `${Math.round(34 * scale)}px`;
         muteBtn.style.padding = `${Math.round(6 * scale)}px ${Math.round(6 * scale)}px`;
+        muteBtn.title = `Mute row ${row + 1}`;
         muteBtn.onclick = () => {
           rowMute[row] = !rowMute[row];
           renderRowControls();
@@ -620,6 +756,7 @@
         soloBtn.style.fontSize = `${Math.round(10 * scale)}px`;
         soloBtn.style.minWidth = `${Math.round(34 * scale)}px`;
         soloBtn.style.padding = `${Math.round(6 * scale)}px ${Math.round(6 * scale)}px`;
+        soloBtn.title = `Solo row ${row + 1}`;
         soloBtn.onclick = () => {
           rowSolo[row] = !rowSolo[row];
           renderRowControls();
@@ -738,6 +875,12 @@
     rowGainValues = Array(rows).fill(0.8);
     rowVoiceState = Array(rows).fill(0).map(() => ({ on: false, freq: 0 }));
     renderRowControls();
+    populateSoundBankSelect();
+    if (soundBankSelect) {
+      soundBankSelect.addEventListener('change', () => {
+        applySoundBank(soundBankSelect.value);
+      });
+    }
     document.getElementById('accentSlider').max = String(cols);
     document.getElementById('autoEverySlider').max = String(cols);
     window.addEventListener('resize', fitGridToViewport);
@@ -1447,7 +1590,8 @@
           autoFractal,
           humanizeOn,
           isLocked,
-          fractalDensity
+          fractalDensity,
+          soundBankId
         }
       };
       localStorage.setItem(`cmt_pattern_${name}`, JSON.stringify(payload));
@@ -1473,6 +1617,8 @@
       humanizeOn = s.humanizeOn ?? humanizeOn;
       isLocked = s.isLocked ?? isLocked;
       fractalDensity = s.fractalDensity ?? fractalDensity;
+      const nextSoundBank = s.soundBankId ?? soundBankId;
+      if (nextSoundBank !== soundBankId) applySoundBank(nextSoundBank);
       
       document.getElementById('bpmSlider').value = bpm;
       document.getElementById('bpmValue').textContent = bpm;
@@ -1488,6 +1634,7 @@
       document.getElementById('autoEveryValue').textContent = autoEvery;
       document.getElementById('densitySlider').value = fractalDensity;
       document.getElementById('densityValue').textContent = fractalDensity;
+      if (soundBankSelect) soundBankSelect.value = soundBankId;
       
       document.getElementById('autoFractalBtn').classList.toggle('active', autoFractal);
       document.getElementById('humanizeBtn').classList.toggle('active', humanizeOn);
@@ -1569,7 +1716,8 @@
             humanizeOn,
             isLocked,
             fractalDensity,
-            midiMode
+            midiMode,
+            soundBankId
           }
         };
         localStorage.setItem('cmt_state_v1', JSON.stringify(state));
@@ -1617,6 +1765,8 @@
         isLocked = s.isLocked ?? isLocked;
         fractalDensity = s.fractalDensity ?? fractalDensity;
         midiMode = s.midiMode ?? midiMode;
+        const nextSoundBank = s.soundBankId ?? soundBankId;
+        if (nextSoundBank !== soundBankId) applySoundBank(nextSoundBank);
         
         document.getElementById('bpmSlider').value = bpm;
         document.getElementById('bpmValue').textContent = bpm;
@@ -1633,6 +1783,7 @@
         document.getElementById('densitySlider').value = fractalDensity;
         document.getElementById('densityValue').textContent = fractalDensity;
         document.getElementById('midiModeBtn').textContent = `MIDI MODE: ${midiModes[midiMode]}`;
+        if (soundBankSelect) soundBankSelect.value = soundBankId;
         
         document.getElementById('autoFractalBtn').classList.toggle('active', autoFractal);
         document.getElementById('humanizeBtn').classList.toggle('active', humanizeOn);
