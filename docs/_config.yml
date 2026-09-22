@@ -1,0 +1,4 @@
+title: Fractal Grid Sequencer
+description: A standalone browser grid sequencer with fractal and Euclidean rhythm tools, per-row mixing, and built-in synth/sample sound banks. No build step - open index.html directly.
+theme: null
+markdown: kramdown

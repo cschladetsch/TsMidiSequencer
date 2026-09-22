@@ -1,5 +1,8 @@
 # Fractal Grid Sequencer
 
+📖 [Docs & diagrams](https://cschladetsch.github.io/TsMidiSequencer/)
+
+
 A standalone browser grid sequencer with fractal/Euclidean rhythm tools, per-row mixing, and built‑in synth/sample sound banks.
 
 ## Quick Start (No Build)
